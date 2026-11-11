@@ -2,11 +2,12 @@ name: AppImage
 
 on:
   push:
-    tags: ["v*"]
+    branches: [dev]
   workflow_dispatch:
 
-permissions:
-  contents: write
+concurrency:
+  group: appimage-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   appimage:
@@ -44,17 +45,37 @@ jobs:
         run: |
           curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool
-          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir Adderall-x86_64.AppImage
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir Adderall-0.1.0-x86_64.AppImage
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Adderall-x86_64.AppImage
-          path: Adderall-x86_64.AppImage
+          name: appimage
+          path: Adderall-0.1.0-x86_64.AppImage
 
-      - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ github.token }}
+  publish:
+    # Commits the AppImage to downloads/ on dev so the README can link to it
+    # directly (no GitHub login needed). Pushes by GITHUB_TOKEN do not start
+    # new workflow runs.
+    if: github.ref == 'refs/heads/dev'
+    needs: appimage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Commit the AppImage
         run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "Adderall $GITHUB_REF_NAME" --notes "Linux AppImage: make it executable and run it."
-          gh release upload "$GITHUB_REF_NAME" Adderall-x86_64.AppImage --clobber
+          mkdir -p downloads
+          cp dist/Adderall-*.AppImage downloads/
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add downloads
+          git diff --cached --quiet || git commit -m "Update AppImage [skip ci]"
+          git pull --rebase origin dev
+          git push origin dev

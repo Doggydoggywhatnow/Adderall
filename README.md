@@ -326,14 +326,13 @@ If your main file is ever damaged, Adderall tells you and falls back to the back
 
 ## Download (Linux AppImage)
 
-Grab `Adderall-x86_64.AppImage` from the [releases page](https://github.com/Doggydoggywhatnow/Adderall/releases/latest), then:
+The Linux AppImage for **v0.1.0** (x86-64) is rebuilt by CI on every push to `dev` and stored in the [`downloads/`](https://github.com/Doggydoggywhatnow/Adderall/tree/dev/downloads) folder:
 
-```bash
-chmod +x Adderall-x86_64.AppImage
-./Adderall-x86_64.AppImage
-```
+| Distribution | Download | Run |
+| --- | --- | --- |
+| Any (AppImage) | [Adderall-0.1.0-x86_64.AppImage](https://github.com/Doggydoggywhatnow/Adderall/raw/dev/downloads/Adderall-0.1.0-x86_64.AppImage) | `chmod +x Adderall-*.AppImage && ./Adderall-*.AppImage` |
 
-It is built by [`.github/workflows/appimage.yml`](.github/workflows/appimage.yml) whenever a `v*` tag is pushed; you can also run that workflow by hand and download the AppImage from the run's artifacts.
+It is built by `.github/workflows/appimage.yml`; the recipe lives in `packaging/appimage/`. Windows and macOS packages are planned.
 
 ## Building from source
 
