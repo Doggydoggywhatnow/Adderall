@@ -64,7 +64,16 @@ if(ADDERALL_BUILD_APP)
       GIT_REPOSITORY https://github.com/libsdl-org/SDL_ttf.git
       GIT_TAG release-3.2.2
       GIT_SHALLOW TRUE)
-    FetchContent_MakeAvailable(SDL3 SDL3_ttf)
+    FetchContent_MakeAvailable(SDL3)
+    # ALIAS targets only exist inside the directory that made them, so repeat
+    # the two SDL_ttf looks for here, where SDL_ttf's directory can see them.
+    if(NOT TARGET SDL3::SDL3)
+      add_library(SDL3::SDL3 ALIAS SDL3-static)
+    endif()
+    if(NOT TARGET SDL3::Headers)
+      add_library(SDL3::Headers ALIAS SDL3_Headers)
+    endif()
+    FetchContent_MakeAvailable(SDL3_ttf)
   endif()
 
   add_executable(adderall WIN32 MACOSX_BUNDLE
@@ -73,7 +82,12 @@ if(ADDERALL_BUILD_APP)
     src/ui.c
     src/app.c
   )
-  target_link_libraries(adderall PRIVATE adderall_core SDL3_ttf::SDL3_ttf SDL3::SDL3)
+  if(TARGET SDL3_ttf::SDL3_ttf)
+    set(ADDERALL_TTF_TARGET SDL3_ttf::SDL3_ttf)
+  else()
+    set(ADDERALL_TTF_TARGET SDL3_ttf-static)
+  endif()
+  target_link_libraries(adderall PRIVATE adderall_core ${ADDERALL_TTF_TARGET} SDL3::SDL3)
   target_compile_definitions(adderall PRIVATE
     ADDERALL_VERSION="${PROJECT_VERSION}"
     ADDERALL_SOURCE_DATA_DIR="${CMAKE_SOURCE_DIR}/data")
