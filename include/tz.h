@@ -43,6 +43,15 @@ int ad_zones_load(const char *zoneinfo_dir, ad_zone_info **out);
 /* The zone nearest to a point on the globe. -1 if there are none. */
 int ad_zones_nearest(const ad_zone_info *z, int n, double lat, double lon);
 
+/* Each zone's standard-time UTC offset in quarter hours (daylight saving
+ * ignored: the smaller of its January and July offsets, as the map's regions
+ * are drawn). `out` has n entries. */
+void ad_zones_std_quarters(const char *zoneinfo_dir, const ad_zone_info *z, int n, int year, int *out);
+
+/* Like ad_zones_nearest, but only among zones whose standard offset is
+ * `quarters` (falls back to all zones if none is). */
+int ad_zones_nearest_in(const ad_zone_info *z, int n, const int *std_quarters, int quarters, double lat, double lon);
+
 int ad_zones_find(const ad_zone_info *z, int n, const char *name);
 
 /* "UTC+5:30" style label for an offset in seconds. */

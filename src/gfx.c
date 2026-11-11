@@ -138,6 +138,23 @@ void gfx_begin_frame(gfx *g) {
 
 void gfx_end_frame(gfx *g) { SDL_RenderPresent(g->ren); }
 
+SDL_Texture *gfx_alpha_texture(gfx *g, int w, int h, const uint8_t *alpha) {
+  uint8_t *px = (uint8_t *)malloc((size_t)w * h * 4);
+  if (!px) return NULL;
+  for (int i = 0; i < w * h; i++) {
+    px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = 255;
+    px[i * 4 + 3] = alpha[i];
+  }
+  SDL_Texture *tex = SDL_CreateTexture(g->ren, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, w, h);
+  if (tex) {
+    SDL_UpdateTexture(tex, NULL, px, w * 4);
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
+  }
+  free(px);
+  return tex;
+}
+
 void gfx_set_color(gfx *g, gfx_color c) { SDL_SetRenderDrawColor(g->ren, c.r, c.g, c.b, c.a); }
 
 void gfx_fill_rect(gfx *g, gfx_color c, float x, float y, float w, float h) {

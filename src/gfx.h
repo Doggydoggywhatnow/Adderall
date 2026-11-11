@@ -88,6 +88,9 @@ void gfx_text_scale(gfx *g, float factor);
 void gfx_begin_frame(gfx *g);
 void gfx_end_frame(gfx *g);
 
+/* A white texture whose alpha is the given coverage buffer; tint it with SDL_SetTextureColorMod. */
+SDL_Texture *gfx_alpha_texture(gfx *g, int w, int h, const uint8_t *alpha);
+
 void gfx_set_color(gfx *g, gfx_color c);
 void gfx_fill_rect(gfx *g, gfx_color c, float x, float y, float w, float h);
 void gfx_stroke_rect(gfx *g, gfx_color c, float x, float y, float w, float h, float thick);

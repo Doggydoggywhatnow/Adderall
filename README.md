@@ -4,7 +4,7 @@
 
 Adderall is a graphical habit tracker written in C. It shows your habits as lines of cells, one cell per day, and makes keeping up with them feel as simple as filling in a square. No accounts, no uploads, no subscriptions: just your habits, on your device. It will also absolutely, definitely change your life.
 
-> **Status:** early development. Sections marked *(planned)* describe where Adderall is headed rather than what ships today.
+> **Status:** version 0.1.0, a demo of everything described below. Sections marked *(planned)* describe where Adderall is headed rather than what ships today.
 
 ---
 
@@ -21,6 +21,7 @@ Adderall is a graphical habit tracker written in C. It shows your habits as line
 - [Measuring progress](#measuring-progress)
 - [Time zones and new days](#time-zones-and-new-days)
 - [Look and feel](#look-and-feel)
+- [Interface notes](#interface-notes)
 - [Platforms](#platforms)
 - [How it works](#how-it-works)
 - [Saving your data](#saving-your-data)
@@ -32,6 +33,7 @@ Adderall is a graphical habit tracker written in C. It shows your habits as line
 - [Roadmap](#roadmap)
 - [FAQ](#faq)
 - [Contributing](#contributing)
+- [Dependencies and licenses](#dependencies-and-licenses)
 - [Acknowledgments](#acknowledgments)
 - [Versioning](#versioning)
 - [License](#license)
@@ -199,6 +201,19 @@ The whole interface is **minimalist, clean, and black and white**. No gradients,
 - A settings button and a habit button sit in the corners, and nothing else crowds the board.
 - Nothing blinks, bounces, or celebrates, and animation can be turned off.
 
+## Interface notes
+
+The decisions behind the screens, for anyone poking at the code:
+
+- **Two corner buttons.** *Habits* sits bottom-left and *Settings* bottom-right. Nothing else crowds the board.
+- **The board.** A thin header names the months (horizontal) or the first day of each line (vertical). Hover a cell for its date, or a symbol cell for the habit's name. Cells are never colored: a plain square is empty, a big dot is filled, a `/` is skipped, and today sits in a larger squircle. A habit's symbol cell is a solid square with the symbol cut out of it, so it can never be mistaken for a day.
+- **Sealed days** look like any other cell of their state; clicking them does nothing.
+- **Habit pop-up.** Opens above the Habits button. Each habit is a row with its symbol, its name, and *Rename*, *Symbol*, *Archive* and *Delete*. *Rename* edits in place; *Symbol* opens a row of the 12 symbols with the ones other habits use dimmed; *Delete* asks "Delete for good? There is no undo." on the spot. Below the board's habits is the "New habit" field, then the *Archived* section with *Restore* and *Delete*. Adding a ninth habit swaps the pop-up for a short list of the eight, each with *Archive* and *Delete*; choose one and the new habit is added right after.
+- **First launch.** A small welcome: name a first habit (or skip) and pick the layout.
+- **Messages** (a damaged file that was recovered, a failed save, a copied path) appear in a bar at the top and stay until dismissed. A failed save keeps its bar, with a *Retry* button, until a save works.
+- **Animation.** The only motion is a short slide when the board scrolls to today or to the keyboard's cell. Settings → Animation turns it off.
+- **Keyboard.** Everything except the measure tool works without a mouse: `Tab` and `Shift+Tab` move between buttons, `Enter` or `Space` press them, `Esc` closes pop-ups.
+
 ## Platforms
 
 Adderall is available on **Windows**, **Linux**, and **macOS**. On Linux it runs on **Wayland** or **X11**; it isn't tied to any particular display server, compositor, or windowing system.
@@ -329,8 +344,6 @@ Use `-DADDERALL_FETCH_DEPS=OFF` to forbid downloads, and `-DADDERALL_BUILD_APP=O
 
 ## Usage
 
-*(planned)*
-
 ```bash
 adderall
 ```
@@ -343,32 +356,34 @@ Launch Adderall, create a habit, pick a layout, and start clicking squares.
 | Skip a day | Right-click its cell |
 | Measure cells | Click and drag across them |
 | Manage habits | The habit button, bottom-left |
-| Open settings | The settings button |
+| Open settings | The settings button, bottom-right |
 | Look at older days | Scroll, or use the arrow keys |
 | See which habit a row is | Hover over the cell at the start of the row |
 
 A typical day: open Adderall, click today's cell on each habit you did, right-click the ones you're skipping, and close it. Your file is already saved. Curious about last week? Drag across those cells and the measure tool tells you what you grabbed.
 
+Two options exist for testing and for keeping separate copies of your data: `--data-dir <folder>` (or the `ADDERALL_DATA_DIR` environment variable) picks the data folder, and `--screenshot <file.bmp>` draws one frame and saves it.
+
 ## Configuration
 
-Adderall lets you change things to suit you. Planned settings include:
+Everything below lives in **Settings** (the button in the bottom-right corner, or the settings hotkey) and is stored in your data file.
 
 ### Habits
 - Horizontal or vertical layout, for the whole board
-- How each grid is displayed
 - Create, rename, archive, restore, and delete habits (from the habit button)
+- *(planned: more display options such as cell size and spacing.)*
 
 ### Time
-- Your time zone, chosen from a world map
-- When a new day begins
+- Your time zone, chosen by clicking a world map, with *Previous zone* and *Next zone* buttons (or the left and right arrow keys) for choosing without a mouse. The map shows the regions of the world by UTC offset; a click picks the nearest zone of that region, and the selected zone is named with its offset and the time there right now. *Follow my computer* goes back to the default.
+- When a new day begins, from 00:00 to 11:59 in 15-minute steps
 
 ### Data
 - Copy the data file's path, or open its folder
 
 ### Hotkeys
-- **Editable hotkeys:** every keyboard shortcut can be remapped
+- **Editable hotkeys:** every keyboard shortcut can be remapped. *Change* replaces an action's keys with the next key you press, *Add a key* gives it another (up to three), and *Reset* restores the default. A key that another action already uses is refused. `Tab` and `Esc` are reserved.
 
-Planned defaults, all editable:
+Defaults, all editable:
 
 | Action | Default key |
 | --- | --- |
@@ -381,54 +396,37 @@ Planned defaults, all editable:
 | Switch between horizontal and vertical | `L` |
 
 ### Appearance
-- **Font:** a clean, minimalist sans-serif by default. Choose any font file (`.ttf` or `.otf`) you like instead
-- **Text size**
-- Cell size and spacing
+- **Font:** a clean, minimalist sans-serif ([Inter](https://rsms.me/inter/)) by default. Choose any font file (`.ttf` or `.otf`) you like instead; if it can't be loaded, Adderall says so and keeps the built-in font
+- **Text size**, 8 to 48
 - Black on white, or white on black
 - **Reduced motion:** turn off animation
 
 ### Accessibility
-- **High-contrast mode**
-- **Large text and interface scaling,** with a font and text size of your choosing
-- **Full keyboard navigation,** except the measure tool, which needs a mouse
 
-Full option documentation will be added as settings are finalized.
+Adderall aims to be usable by everyone: keyboard navigation for the whole interface (except the measure tool, which needs a mouse), large text and scaling, a high-contrast mode on top of the black-and-white design, cell states that never rely on color alone, and reduced motion. If something gets in your way, please [open an issue](../../issues). Accessibility problems are treated as bugs.
 
-## Privacy
-
-Privacy is a core value, not a feature toggle.
-
-- All data stays on your device.
-- Your habits, marked days, and settings are stored in a single Markdown file (`adderall.md`).
-- Adderall makes no network requests: no update checks, no crash reports, no telemetry, no accounts.
-- Adderall only reads and writes its own data folder. It doesn't scan or look at anything else on your device.
-- You can open, back up, or delete that file at any time.
-
-What you do with your habits is your business. Period.
-
-## Accessibility
-
-*(planned)* Adderall aims to be usable by everyone: keyboard navigation for the whole interface (except the measure tool, which needs a mouse), large text and scaling, a high-contrast mode on top of the black-and-white design, cell states that never rely on color alone, and reduced motion. If something gets in your way, please [open an issue](../../issues). Accessibility problems are treated as bugs.
+Things to know: Adderall draws its own interface with SDL3, so it doesn't yet expose itself to screen readers; the line at the bottom of the board that names the focused cell is the closest thing. Native file and folder choosers (for the font) are the system's own.
 
 ## Roadmap
 
-- [ ] Habits stacked as rows of cells, up to 8
-- [ ] Horizontal (endless) and vertical (wrapping) layouts
-- [ ] Click to fill, right-click to skip, past days sealed
-- [ ] Habit button: create, rename, archive, restore, and delete habits
-- [ ] A unique symbol for each habit, with hover tooltips
-- [ ] Single Markdown data file, crash-safe, with a backup
-- [ ] Time zone map and custom new-day time, with a bundled time zone database
-- [ ] Freeform measure tool
-- [ ] Black-and-white interface, light and dark
-- [ ] Settings button, with editable hotkeys
-- [ ] Font and text size settings
-- [ ] Scrolling and arrow-key navigation
-- [ ] Lock so only one window edits the data file
-- [ ] Copy the data path and open its folder from settings
-- [ ] Keyboard navigation and accessibility options
+- [x] Habits stacked as rows of cells, up to 8
+- [x] Horizontal (endless) and vertical (wrapping) layouts
+- [x] Click to fill, right-click to skip, past days sealed
+- [x] Habit button: create, rename, archive, restore, and delete habits
+- [x] A unique symbol for each habit, with hover tooltips
+- [x] Single Markdown data file, crash-safe, with a backup
+- [x] Time zone map and custom new-day time, with a bundled time zone database
+- [x] Freeform measure tool
+- [x] Black-and-white interface, light and dark
+- [x] Settings button, with editable hotkeys
+- [x] Font and text size settings
+- [x] Scrolling and arrow-key navigation
+- [x] Lock so only one window edits the data file
+- [x] Copy the data path and open its folder from settings
+- [x] Keyboard navigation and accessibility options
 - [ ] Progress summaries (no streak guilt)
-- [ ] Windows, Linux (Wayland and X11), and macOS builds
+- [x] Windows, Linux (Wayland and X11), and macOS builds
+- [ ] Cell size and spacing options
 
 ## FAQ
 
@@ -472,9 +470,25 @@ No. Neither will the pill the name is making fun of. But a row of filled squares
 
 Contributions are welcome once the project is public. Ideas, bug reports, and pull requests that fit Adderall's four values are especially appreciated. Contribution guidelines will be added here.
 
+## Dependencies and licenses
+
+Adderall's own code is under the Unlicense. Everything it uses is public domain or permissively licensed (nothing GPL, nothing share-alike), and every choice is recorded here.
+
+| What | Used for | License |
+| --- | --- | --- |
+| [SDL3](https://libsdl.org) 3.4 | window, input, drawing | zlib |
+| [SDL_ttf](https://github.com/libsdl-org/SDL_ttf) 3.2 | drawing text | zlib |
+| [FreeType](https://freetype.org) (bundled inside SDL_ttf) | reading font files | FreeType License (BSD-style; we use it under the FTL, not the GPL option) |
+| [Inter](https://rsms.me/inter/) Regular, in `data/fonts` | the default font | SIL Open Font License 1.1 (the license text ships beside it in `data/fonts/Inter-LICENSE.txt`; the font is used unmodified) |
+| [IANA Time Zone Database](https://www.iana.org/time-zones) 2026e, in `data/zoneinfo` | time zones and daylight saving | public domain |
+| [Natural Earth](https://www.naturalearthdata.com) land and time zone regions, simplified, in `data/map` | the time zone map | public domain |
+
+No code from any of these is GPL, and none needs the network at run time.
+
 ## Acknowledgments
 
 - [SDL](https://libsdl.org) for making one codebase work on every desktop
+- The [Inter](https://rsms.me/inter/) project, the IANA time zone community, and [Natural Earth](https://www.naturalearthdata.com) for giving their work away
 - The Wayland and X11 communities, for making native software possible on both
 - Everyone who has ever tried to build a habit and just wanted a simple way to keep track
 

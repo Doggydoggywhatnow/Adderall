@@ -9,6 +9,7 @@
 #include "board.h"
 #include "date.h"
 #include "gfx.h"
+#include "map.h"
 #include "measure.h"
 #include "model.h"
 #include "store.h"
@@ -22,6 +23,8 @@ enum {
   ID_HABIT_BTN, ID_SETTINGS_BTN,
   ID_POP_CLOSE, ID_POP_NAME, ID_POP_ADD, ID_POP_CANCEL,
   ID_FIRST_NAME, ID_FIRST_HORIZ, ID_FIRST_VERT, ID_FIRST_START, ID_FIRST_SKIP,
+  ID_SET_CLOSE, ID_MAP_USE, ID_MAP_CANCEL, ID_MAP_PREV, ID_MAP_NEXT, ID_MAP_AREA,
+  ID_SET_BASE = 3000, /* + row * 16 + k */
   ID_HABIT_ROWS = 1000 /* + habit * 16 + k */
 };
 
@@ -78,10 +81,36 @@ typedef struct {
   float popup_scroll, popup_content_h;
   ad_rect popup_rect;
 
+  /* settings */
+  bool settings_open;
+  float set_scroll, set_content_h;
+  int capture_action;   /* hotkey being changed (-1 none) */
+  bool capture_add;
+  char set_msg[200];
+  uint32_t font_event;  /* posted by the file chooser */
+
+  /* the time zone map */
+  bool map_open;
+  ad_map map;
+  bool map_loaded;
+  SDL_Texture *map_tex, *map_hl;
+  int map_tex_w, map_hl_q;
+  int *zone_std;        /* standard offset of each zone, quarter hours */
+  int *zone_order;      /* zone indices sorted by offset, then name */
+  int map_sel;          /* selected zone index, -1 none */
+  ad_rect map_rect;
+
+  /* smooth scrolling (off when motion is reduced) */
+  bool anim_on;
+  float anim_from, anim_to;
+  Uint64 anim_t0;
+
   /* first launch */
   char first_name[AD_NAME_MAX_BYTES + 8];
   ad_layout first_layout;
 } App;
+
+#define SCROLL_ANIM_MS 170
 
 /* ---- resources and the system ------------------------------------------ */
 
@@ -171,6 +200,56 @@ static void commit(App *a) {
   char msg[300];
   if (ad_store_save(&a->store, &a->model, msg, sizeof msg)) a->save_error[0] = 0;
   else SDL_snprintf(a->save_error, sizeof a->save_error, "Could not save: %s", msg);
+}
+
+/* Make the window match the settings: look, scale, font. */
+static void apply_settings(App *a) {
+  const ad_settings *st = &a->model.settings;
+  gfx_set_theme(&a->g, st->dark, st->high_contrast);
+  gfx_set_ui_scale(&a->g, st->scale / 100.0f);
+  if (!gfx_set_font(&a->g, a->bundled_font, st->font, st->textsize) && a->g.font_error[0] == 0)
+    SDL_snprintf(a->g.font_error, sizeof a->g.font_error, "Could not load a font.");
+  if (a->g.font_error[0]) {
+    SDL_snprintf(a->notice, sizeof a->notice, "%s", a->g.font_error);
+    a->g.font_error[0] = 0;
+  }
+  a->redraw = true;
+}
+
+/* ---- smooth scrolling ------------------------------------------------------ */
+
+static void scroll_cancel(App *a) { a->anim_on = false; }
+
+/* Scroll to a day (centred, or just into view). Slides unless motion is reduced. */
+static void scroll_to_day(App *a, ad_day day, bool center) {
+  ad_view *v = &a->view;
+  const float old = v->scroll;
+  if (center) ad_view_center_on(v, day);
+  else ad_view_ensure_visible(v, day);
+  const float target = v->scroll;
+  if (a->model.settings.reduced_motion || fabsf(target - old) < 1.0f) {
+    a->anim_on = false;
+    return;
+  }
+  v->scroll = old;
+  a->anim_on = true;
+  a->anim_from = old;
+  a->anim_to = target;
+  a->anim_t0 = SDL_GetTicks();
+}
+
+/* Advance the slide; true while it is still moving. */
+static bool scroll_step(App *a) {
+  if (!a->anim_on) return false;
+  float t = (float)(SDL_GetTicks() - a->anim_t0) / SCROLL_ANIM_MS;
+  if (t >= 1.0f) {
+    a->view.scroll = a->anim_to;
+    a->anim_on = false;
+    return false;
+  }
+  t = 1.0f - (1.0f - t) * (1.0f - t); /* ease out */
+  a->view.scroll = a->anim_from + (a->anim_to - a->anim_from) * t;
+  return true;
 }
 
 /* ---- board drawing ----------------------------------------------------- */
@@ -326,7 +405,9 @@ static void board_frame(App *a) {
   }
 
   /* scrolling */
+  if (scroll_step(a)) a->redraw = true;
   if (live && (u->wheel_x != 0 || u->wheel_y != 0) && !ad_rect_has(a->banner_rect, u->mx, u->my)) {
+    scroll_cancel(a);
     const float step = v->pitch * 1.5f;
     if (v->layout == AD_LAYOUT_HORIZONTAL) v->scroll += (u->wheel_x != 0 ? u->wheel_x : -u->wheel_y) * step;
     else v->scroll += -u->wheel_y * step;
@@ -902,6 +983,17 @@ static void corner_buttons_frame(App *a) {
     if (a->popup_open) popup_close(a);
     else popup_open_now(a);
   }
+  const float sw = ui_button_width(u, "Settings");
+  ad_rect sb = {W - 28 * s - sw, H - 14 * s - bh, sw, bh};
+  if (ui_button(u, ID_SETTINGS_BTN, sb, "Settings", a->settings_open ? UI_BTN_SELECTED : UI_BTN_NORMAL)) {
+    if (a->settings_open) a->settings_open = false;
+    else {
+      popup_close(a);
+      a->settings_open = true;
+    }
+    a->capture_action = -1;
+    a->map_open = false;
+  }
 }
 
 static void set_fatal(App *a, const char *title, const char *text, bool can_backup) {
@@ -955,6 +1047,539 @@ static void fatal_frame(App *a) {
   ad_rect q = {panel.x + pw - pad - ui_button_width(u, "Quit"), by, ui_button_width(u, "Quit"), bh};
   if (ui_button(u, ID_FATAL_QUIT, q, "Quit", UI_BTN_PRIMARY) || ui_take_key(u, SDLK_ESCAPE, 0)) a->quit = true;
   if (!u->focus) u->focus = ID_FATAL_QUIT;
+}
+
+/* ---- the time zone map ------------------------------------------------------- */
+
+static int cmp_zone_order_ctx_dummy;
+
+static const App *g_sort_app;
+static int cmp_zone_order(const void *x, const void *y) {
+  const int i = *(const int *)x, j = *(const int *)y;
+  const App *a = g_sort_app;
+  if (a->zone_std[i] != a->zone_std[j]) return a->zone_std[i] - a->zone_std[j];
+  return strcmp(a->zones[i].name, a->zones[j].name);
+}
+
+static void map_free_textures(App *a) {
+  if (a->map_tex) SDL_DestroyTexture(a->map_tex);
+  if (a->map_hl) SDL_DestroyTexture(a->map_hl);
+  a->map_tex = a->map_hl = NULL;
+  a->map_tex_w = 0;
+  a->map_hl_q = -9999;
+}
+
+static bool map_prepare(App *a) {
+  if (a->map_loaded) return true;
+  char mp[1100];
+  if (!resource_path("map/world.txt", mp, sizeof mp) || !ad_map_load(mp, &a->map)) return false;
+  a->zone_std = (int *)malloc(sizeof(int) * (size_t)a->nzones);
+  a->zone_order = (int *)malloc(sizeof(int) * (size_t)a->nzones);
+  if (!a->zone_std || !a->zone_order) return false;
+  SDL_Time now;
+  SDL_DateTime dt;
+  int year = 2026;
+  if (SDL_GetCurrentTime(&now) && SDL_TimeToDateTime(now, &dt, false)) year = dt.year;
+  ad_zones_std_quarters(a->zoneinfo_dir, a->zones, a->nzones, year, a->zone_std);
+  for (int i = 0; i < a->nzones; i++) a->zone_order[i] = i;
+  g_sort_app = a;
+  qsort(a->zone_order, (size_t)a->nzones, sizeof(int), cmp_zone_order);
+  a->map_loaded = true;
+  a->map_hl_q = -9999;
+  return true;
+}
+
+static void map_open_now(App *a) {
+  if (!map_prepare(a)) {
+    SDL_snprintf(a->notice, sizeof a->notice, "The map could not be loaded. You can still pick a zone with the Previous and Next buttons.");
+  }
+  a->map_open = true;
+  a->map_sel = ad_zones_find(a->zones, a->nzones, a->tz_name);
+  a->ui.focus = ID_MAP_USE;
+}
+
+static int zone_pos(const App *a, int zone) {
+  for (int i = 0; i < a->nzones; i++)
+    if (a->zone_order[i] == zone) return i;
+  return 0;
+}
+
+static void map_step(App *a, int dir) {
+  if (!a->map_loaded || a->nzones == 0) return;
+  int pos = a->map_sel >= 0 ? zone_pos(a, a->map_sel) : 0;
+  pos = (pos + dir + a->nzones) % a->nzones;
+  a->map_sel = a->zone_order[pos];
+}
+
+static void map_frame(App *a) {
+  ui_state *u = &a->ui;
+  gfx *g = &a->g;
+  int W, H;
+  SDL_GetWindowSizeInPixels(a->win, &W, &H);
+  const float s = g->scale, pad = 18 * s, lh = gfx_text_height(g);
+  /* the map is twice as wide as it is tall; fit it in the window */
+  float mw = fminf(W - 2 * 28 * s - 2 * pad, 1000 * s);
+  float avail_h = H - 2 * 28 * s - 2 * pad - lh * 4 - 90 * s;
+  if (mw / 2 > avail_h) mw = fmaxf(avail_h * 2, 240 * s);
+  const float mh = mw / 2;
+  const float pw = mw + 2 * pad, ph = mh + 2 * pad + lh * 4.2f + 60 * s;
+  ad_rect panel = {(W - pw) * 0.5f, fmaxf(10 * s, (H - ph) * 0.5f), pw, ph};
+  ui_panel(u, panel);
+  gfx_text(g, "Choose your time zone: click the map", panel.x + pad, panel.y + pad * 0.7f, g->theme.fg);
+  ad_rect mr = {panel.x + pad, panel.y + pad * 0.7f + lh + 10 * s, mw, mh};
+  a->map_rect = mr;
+
+  const int iw = (int)mr.w, ih = (int)(mr.w / 2);
+  if (a->map_loaded && (a->map_tex == NULL || a->map_tex_w != iw)) {
+    map_free_textures(a);
+    uint8_t *buf = (uint8_t *)calloc((size_t)iw * ih, 1);
+    if (buf) {
+      ad_map_fill(&a->map, 'L', INT32_MIN, iw, ih, buf, 34);
+      ad_map_outline(&a->map, 'Z', iw, ih, buf, 110);
+      ad_map_outline(&a->map, 'L', iw, ih, buf, 200);
+      a->map_tex = gfx_alpha_texture(g, iw, ih, buf);
+      a->map_tex_w = iw;
+      free(buf);
+    }
+  }
+  gfx_fill_rect(g, g->theme.bg, mr.x, mr.y, mr.w, mr.h);
+  gfx_stroke_rect(g, g->theme.dim, mr.x - 1, mr.y - 1, mr.w + 2, mr.h + 2, 1);
+  if (a->map_tex) {
+    SDL_SetTextureColorMod(a->map_tex, g->theme.fg.r, g->theme.fg.g, g->theme.fg.b);
+    SDL_FRect dst = {mr.x, mr.y, (float)iw, (float)ih};
+    SDL_RenderTexture(g->ren, a->map_tex, NULL, &dst);
+  }
+
+  /* the region of the selected zone */
+  int sel_q = -9999;
+  if (a->map_sel >= 0 && a->map_loaded) sel_q = a->zone_std[a->map_sel];
+  if (a->map_loaded && sel_q != a->map_hl_q) {
+    if (a->map_hl) SDL_DestroyTexture(a->map_hl);
+    a->map_hl = NULL;
+    uint8_t *buf = (uint8_t *)calloc((size_t)iw * ih, 1);
+    if (buf && sel_q != -9999) {
+      ad_map_fill(&a->map, 'Z', sel_q, iw, ih, buf, g->high_contrast ? 110 : 70);
+      a->map_hl = gfx_alpha_texture(g, iw, ih, buf);
+    }
+    free(buf);
+    a->map_hl_q = sel_q;
+  }
+  if (a->map_hl) {
+    SDL_SetTextureColorMod(a->map_hl, g->theme.fg.r, g->theme.fg.g, g->theme.fg.b);
+    SDL_FRect dst = {mr.x, mr.y, (float)iw, (float)ih};
+    SDL_RenderTexture(g->ren, a->map_hl, NULL, &dst);
+  }
+
+  /* hover and click */
+  if (a->map_loaded && ui_hover(u, mr)) {
+    double lon, lat;
+    ad_map_to_lonlat(iw, ih, u->mx - mr.x, u->my - mr.y, &lon, &lat);
+    int q;
+    if (ad_map_band_at(&a->map, lon, lat, &q)) {
+      char off[32], tip[48];
+      ad_tz_format_offset(q * 900, off, sizeof off);
+      SDL_snprintf(tip, sizeof tip, "%s", off);
+      ui_tooltip(u, tip, NULL, u->mx, u->my);
+    }
+    if (u->lpress && !u->consumed_click) {
+      u->consumed_click = true;
+      int pick;
+      if (ad_map_band_at(&a->map, lon, lat, &q)) pick = ad_zones_nearest_in(a->zones, a->nzones, a->zone_std, q, lat, lon);
+      else pick = ad_zones_nearest(a->zones, a->nzones, lat, lon);
+      if (pick >= 0) a->map_sel = pick;
+    }
+  }
+  /* where the selected zone is */
+  if (a->map_sel >= 0) {
+    float px, py;
+    ad_map_from_lonlat(iw, ih, a->zones[a->map_sel].lon, a->zones[a->map_sel].lat, &px, &py);
+    const float d = roundf(12 * s);
+    gfx_mask(g, GFX_MASK_SQUIRCLE_FILL, 0, 0, mr.x + px - d * 0.7f, mr.y + py - d * 0.7f, d * 1.4f, g->theme.bg);
+    gfx_mask(g, GFX_MASK_SQUIRCLE_FILL, 0, 0, mr.x + px - d / 2, mr.y + py - d / 2, d, g->theme.fg);
+  }
+
+  /* what is selected */
+  float y = mr.y + mr.h + 12 * s;
+  char line[200];
+  if (a->map_sel >= 0) {
+    ad_tz *tz = ad_tz_load(a->zoneinfo_dir, a->zones[a->map_sel].name);
+    char off[32] = "";
+    char when[64] = "";
+    if (tz) {
+      const int64_t now = ad_plat_now();
+      bool dst;
+      const int o = ad_tz_offset(tz, now, &dst);
+      ad_tz_format_offset(o, off, sizeof off);
+      const int64_t local = now + o;
+      const ad_day d = (ad_day)ad_floor_div(local, 86400);
+      const int sec = (int)ad_floor_mod(local, 86400);
+      int yy, mm, dd;
+      ad_day_to_ymd(d, &yy, &mm, &dd);
+      SDL_snprintf(when, sizeof when, "%s %d %s, %02d:%02d", ad_weekday_short(ad_day_weekday(d)), dd, ad_month_short(mm), sec / 3600, sec % 3600 / 60);
+      SDL_snprintf(line, sizeof line, "%s   %s%s", a->zones[a->map_sel].name, off, dst ? ", daylight saving now" : "");
+      ad_tz_free(tz);
+    } else {
+      SDL_snprintf(line, sizeof line, "%s", a->zones[a->map_sel].name);
+    }
+    gfx_text_fit(g, line, panel.x + pad, y, pw - 2 * pad, g->theme.fg);
+    y += lh;
+    if (when[0]) {
+      char l2[120];
+      SDL_snprintf(l2, sizeof l2, "It is %s there right now.", when);
+      gfx_text(g, l2, panel.x + pad, y, g->theme.dim);
+    }
+  } else {
+    gfx_text(g, "Nothing selected yet.", panel.x + pad, y, g->theme.dim);
+  }
+  y += lh * 1.2f;
+  gfx_text(g, "Changing your time zone only affects days from now on. Sealed days stay sealed.", panel.x + pad, y, g->theme.dim);
+
+  /* buttons */
+  const float bh = 36 * s, by = panel.y + ph - pad * 0.8f - bh;
+  float bx = panel.x + pad;
+  ad_rect pr = {bx, by, ui_button_width(u, "Previous zone"), bh};
+  if (ui_button(u, ID_MAP_PREV, pr, "Previous zone", UI_BTN_NORMAL)) map_step(a, -1);
+  bx += pr.w + 8 * s;
+  ad_rect nr = {bx, by, ui_button_width(u, "Next zone"), bh};
+  if (ui_button(u, ID_MAP_NEXT, nr, "Next zone", UI_BTN_NORMAL)) map_step(a, 1);
+  const float uw = ui_button_width(u, "Use this time zone"), cw = ui_button_width(u, "Cancel");
+  ad_rect cr = {panel.x + pw - pad - cw, by, cw, bh};
+  ad_rect ur = {cr.x - 8 * s - uw, by, uw, bh};
+  if (ui_button(u, ID_MAP_CANCEL, cr, "Cancel", UI_BTN_NORMAL)) a->map_open = false;
+  if (ui_button(u, ID_MAP_USE, ur, "Use this time zone", UI_BTN_PRIMARY | (a->map_sel < 0 ? UI_BTN_DISABLED : 0)) && a->map_sel >= 0) {
+    SDL_strlcpy(a->model.settings.timezone, a->zones[a->map_sel].name, sizeof a->model.settings.timezone);
+    apply_timezone(a);
+    ad_model_set_clock(&a->model, clock_day(a));
+    commit(a);
+    a->map_open = false;
+    a->redraw = true;
+  }
+  /* the keyboard: Left and Right walk through the zones in order of offset */
+  if (ui_take_key(u, SDLK_LEFT, 0)) map_step(a, -1);
+  if (ui_take_key(u, SDLK_RIGHT, 0)) map_step(a, 1);
+  (void)cmp_zone_order_ctx_dummy;
+}
+
+/* ---- settings -------------------------------------------------------------- */
+
+typedef struct {
+  float x, y, w, rh, label_w, cx;
+  int id;
+} SRow;
+
+static void row_begin(App *a, SRow *r, float x, float y, float w, int id_base, const char *label) {
+  gfx *g = &a->g;
+  r->x = x;
+  r->y = y;
+  r->w = w;
+  r->rh = roundf(fmaxf(40 * g->scale, gfx_text_height(g) + 14 * g->scale));
+  r->label_w = fminf(w * 0.34f, 230 * g->scale);
+  r->cx = x + r->label_w;
+  r->id = id_base;
+  gfx_text_fit(g, label, x, y + (r->rh - gfx_text_height(g)) * 0.5f, r->label_w - 10 * g->scale, g->theme.fg);
+}
+
+static bool row_button(App *a, SRow *r, const char *label, int flags) {
+  const float bh = roundf(r->rh * 0.8f);
+  ad_rect br = {r->cx, r->y + (r->rh - bh) * 0.5f, ui_button_width(&a->ui, label), bh};
+  if (br.x + br.w > r->x + r->w) { /* does not fit: it stays reachable, clipped by the panel */ }
+  r->cx += br.w + 8 * a->g.scale;
+  return ui_button(&a->ui, r->id++, br, label, flags);
+}
+
+static float row_text(App *a, SRow *r, const char *text, gfx_color c) {
+  const float w = r->x + r->w - r->cx;
+  const float used = fminf(gfx_text_width(&a->g, text), w);
+  gfx_text_fit(&a->g, text, r->cx, r->y + (r->rh - gfx_text_height(&a->g)) * 0.5f, w, c);
+  r->cx += used + 10 * a->g.scale;
+  return used;
+}
+
+static void settings_changed(App *a) {
+  apply_settings(a);
+  commit(a);
+  a->redraw = true;
+}
+
+static void section_title(App *a, float x, float *y, float w, const char *title) {
+  gfx *g = &a->g;
+  *y += 14 * g->scale;
+  gfx_text(g, title, x, *y, g->theme.fg);
+  *y += gfx_text_height(g) + 4 * g->scale;
+  gfx_fill_rect(g, g->theme.dim, x, *y, w, fmaxf(1.0f, a->ui.line * 0.5f));
+  *y += 8 * g->scale;
+}
+
+static const char *base_name(const char *path) {
+  const char *b = path;
+  for (const char *p = path; *p; p++)
+    if (*p == '/' || *p == '\\') b = p + 1;
+  return b;
+}
+
+static void SDLCALL font_dialog_done(void *userdata, const char *const *files, int filter) {
+  App *a = (App *)userdata;
+  SDL_Event e;
+  SDL_zero(e);
+  e.type = a->font_event;
+  if (!files) {
+    e.user.code = 1; /* the chooser could not be shown */
+  } else if (!files[0]) {
+    return; /* cancelled */
+  } else {
+    e.user.data1 = SDL_strdup(files[0]);
+  }
+  SDL_PushEvent(&e);
+}
+
+static void choose_font(App *a) {
+  static const SDL_DialogFileFilter filters[] = {{"Font files (.ttf, .otf)", "ttf;otf"}};
+  SDL_ShowOpenFileDialog(font_dialog_done, a, a->win, filters, 1, NULL, false);
+}
+
+static void capture_hotkey(App *a) {
+  ui_state *u = &a->ui;
+  for (int i = 0; i < u->nkeys; i++) {
+    ui_key *k = &u->keys[i];
+    if (k->used) continue;
+    if (k->key == SDLK_ESCAPE) {
+      k->used = true;
+      a->capture_action = -1;
+      a->set_msg[0] = 0;
+      return;
+    }
+    ad_key ak;
+    if (!ad_key_from_event(k, &ak)) continue; /* a bare Shift or Ctrl: wait for the real key */
+    k->used = true;
+    if (strcmp(ak.key, "Tab") == 0) {
+      SDL_strlcpy(a->set_msg, "Tab is reserved for moving between buttons. Try another key.", sizeof a->set_msg);
+      return;
+    }
+    for (int act = 0; act < AD_ACT_COUNT; act++) {
+      if (act == a->capture_action) continue;
+      const ad_binding b = binding_for(a, (ad_action)act);
+      if (ad_binding_has(&b, &ak)) {
+        char kn[40];
+        ad_key_format(&ak, kn, sizeof kn);
+        SDL_snprintf(a->set_msg, sizeof a->set_msg, "%s is already used to \"%s\". Change that one first.", kn, ad_action_label((ad_action)act));
+        return;
+      }
+    }
+    ad_settings *st = &a->model.settings;
+    ad_binding b = a->capture_add ? binding_for(a, (ad_action)a->capture_action) : (ad_binding){0};
+    if (!ad_binding_has(&b, &ak)) {
+      if (b.n >= AD_MAX_BINDINGS) {
+        SDL_strlcpy(a->set_msg, "An action can have up to 3 keys. Use Change to start over.", sizeof a->set_msg);
+        return;
+      }
+      b.keys[b.n++] = ak;
+    }
+    st->hotkey[a->capture_action] = b;
+    st->hotkey_set[a->capture_action] = true;
+    /* back to the default? then there is nothing to remember */
+    char x1[120], x2[120];
+    const ad_binding d = ad_hotkey_default((ad_action)a->capture_action);
+    ad_binding_format(&b, x1, sizeof x1);
+    ad_binding_format(&d, x2, sizeof x2);
+    if (strcmp(x1, x2) == 0) st->hotkey_set[a->capture_action] = false;
+    a->capture_action = -1;
+    a->set_msg[0] = 0;
+    commit(a);
+    return;
+  }
+}
+
+static void settings_frame(App *a) {
+  ui_state *u = &a->ui;
+  gfx *g = &a->g;
+  ad_settings *st = &a->model.settings;
+  int W, H;
+  SDL_GetWindowSizeInPixels(a->win, &W, &H);
+  const float s = g->scale, pad = 20 * s, margin = 24 * s;
+  const float pw = fminf(W - 2 * margin, 860 * s);
+  ad_rect panel = {(W - pw) * 0.5f, margin, pw, H - 2 * margin};
+  ui_panel(u, panel);
+  const float title_h = gfx_text_height(g) + pad * 1.4f;
+  gfx_text(g, "Settings", panel.x + pad, panel.y + pad * 0.7f, g->theme.fg);
+  const float cb = ui_button_width(u, "Close");
+  ad_rect close = {panel.x + pw - pad - cb, panel.y + pad * 0.45f, cb, gfx_text_height(g) + pad * 0.6f};
+  if (!a->map_open && ui_button(u, ID_SET_CLOSE, close, "Close", UI_BTN_NORMAL)) {
+    a->settings_open = false;
+    a->capture_action = -1;
+    a->ui.focus = 0;
+    return;
+  }
+  gfx_fill_rect(g, g->theme.dim, panel.x, panel.y + title_h, pw, fmaxf(1.0f, u->line * 0.5f));
+
+  ad_rect view = {panel.x, panel.y + title_h + 2, pw, panel.h - title_h - 2};
+  u->use_clip = true;
+  u->clip = view;
+  if (a->map_open) u->use_clip = true, u->clip = (ad_rect){0, 0, 0, 0}; /* the map is on top: nothing underneath reacts */
+  SDL_Rect clip = {(int)view.x + 1, (int)view.y, (int)view.w - 2, (int)view.h - 1};
+  gfx_clip(g, &clip);
+  if (!a->map_open && u->mouse_in && ad_rect_has(view, u->mx, u->my) && u->wheel_y != 0) a->set_scroll -= u->wheel_y * 56 * s;
+  const float max_scroll = fmaxf(0, a->set_content_h + pad - view.h);
+  if (a->set_scroll > max_scroll) a->set_scroll = max_scroll;
+  if (a->set_scroll < 0) a->set_scroll = 0;
+
+  const float x = panel.x + pad, w = pw - 2 * pad;
+  float y = view.y + pad * 0.4f - a->set_scroll;
+  const float top = y;
+  char buf[256];
+  SRow r;
+
+  /* --- time --- */
+  section_title(a, x, &y, w, "Time");
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 0, "Time zone");
+  {
+    char off[32];
+    bool dst;
+    const int o = ad_tz_offset(a->tz, ad_plat_now(), &dst);
+    ad_tz_format_offset(o, off, sizeof off);
+    SDL_snprintf(buf, sizeof buf, "%s  (%s)%s", a->tz_name, off, st->timezone[0] ? "" : "  from your computer");
+  }
+  row_text(a, &r, buf, g->theme.fg);
+  y += r.rh;
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 16, "");
+  if (row_button(a, &r, "Choose on the map", UI_BTN_NORMAL)) map_open_now(a);
+  if (st->timezone[0] && row_button(a, &r, "Follow my computer", UI_BTN_NORMAL)) {
+    st->timezone[0] = 0;
+    apply_timezone(a);
+    ad_model_set_clock(&a->model, clock_day(a));
+    commit(a);
+  }
+  y += r.rh;
+
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 32, "A new day begins at");
+  {
+    if (row_button(a, &r, "-1 h", st->daystart < 60 ? UI_BTN_DISABLED : 0)) st->daystart -= 60, settings_changed(a);
+    if (row_button(a, &r, "-15 m", st->daystart < 15 ? UI_BTN_DISABLED : 0)) st->daystart -= 15, settings_changed(a);
+    SDL_snprintf(buf, sizeof buf, "%02d:%02d", st->daystart / 60, st->daystart % 60);
+    row_text(a, &r, buf, g->theme.fg);
+    if (row_button(a, &r, "+15 m", st->daystart + 15 > AD_DAYSTART_MAX ? UI_BTN_DISABLED : 0)) st->daystart += 15, settings_changed(a);
+    if (row_button(a, &r, "+1 h", st->daystart + 60 > AD_DAYSTART_MAX ? UI_BTN_DISABLED : 0)) st->daystart += 60, settings_changed(a);
+  }
+  y += r.rh;
+  y += ui_wrapped_text(u, "A night owl can start the day at 04:00. Changing the time zone or this time only affects days from now on: sealed days stay sealed.", x, y, w, g->theme.dim, true) + 4 * s;
+
+  /* --- board --- */
+  section_title(a, x, &y, w, "Board");
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 48, "Layout");
+  if (row_button(a, &r, "Horizontal", st->layout == AD_LAYOUT_HORIZONTAL ? UI_BTN_SELECTED : 0)) {
+    st->layout = AD_LAYOUT_HORIZONTAL;
+    settings_changed(a);
+    layout_view(a);
+    scroll_to_day(a, a->model.today, true);
+  }
+  if (row_button(a, &r, "Vertical", st->layout == AD_LAYOUT_VERTICAL ? UI_BTN_SELECTED : 0)) {
+    st->layout = AD_LAYOUT_VERTICAL;
+    settings_changed(a);
+    layout_view(a);
+    scroll_to_day(a, a->model.today, true);
+  }
+  y += r.rh;
+
+  /* --- look --- */
+  section_title(a, x, &y, w, "Look");
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 64, "Colors");
+  if (row_button(a, &r, "Black on white", !st->dark ? UI_BTN_SELECTED : 0)) st->dark = false, settings_changed(a);
+  if (row_button(a, &r, "White on black", st->dark ? UI_BTN_SELECTED : 0)) st->dark = true, settings_changed(a);
+  y += r.rh;
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 80, "High contrast");
+  if (row_button(a, &r, "Off", !st->high_contrast ? UI_BTN_SELECTED : 0)) st->high_contrast = false, settings_changed(a);
+  if (row_button(a, &r, "On", st->high_contrast ? UI_BTN_SELECTED : 0)) st->high_contrast = true, settings_changed(a);
+  y += r.rh;
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 96, "Animation");
+  if (row_button(a, &r, "On", !st->reduced_motion ? UI_BTN_SELECTED : 0)) st->reduced_motion = false, settings_changed(a);
+  if (row_button(a, &r, "Reduced: none", st->reduced_motion ? UI_BTN_SELECTED : 0)) st->reduced_motion = true, settings_changed(a);
+  y += r.rh;
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 112, "Interface scale");
+  if (row_button(a, &r, "-", st->scale <= 50 ? UI_BTN_DISABLED : 0)) st->scale = st->scale - 10 < 50 ? 50 : st->scale - 10, settings_changed(a);
+  SDL_snprintf(buf, sizeof buf, "%d%%", st->scale);
+  row_text(a, &r, buf, g->theme.fg);
+  if (row_button(a, &r, "+", st->scale >= 300 ? UI_BTN_DISABLED : 0)) st->scale = st->scale + 10 > 300 ? 300 : st->scale + 10, settings_changed(a);
+  y += r.rh;
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 128, "Text size");
+  if (row_button(a, &r, "-", st->textsize <= 8 ? UI_BTN_DISABLED : 0)) st->textsize--, settings_changed(a);
+  SDL_snprintf(buf, sizeof buf, "%d", st->textsize);
+  row_text(a, &r, buf, g->theme.fg);
+  if (row_button(a, &r, "+", st->textsize >= 48 ? UI_BTN_DISABLED : 0)) st->textsize++, settings_changed(a);
+  y += r.rh;
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 144, "Font");
+  row_text(a, &r, st->font[0] ? base_name(st->font) : "Inter (built in)", g->theme.fg);
+  y += r.rh;
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 160, "");
+  if (row_button(a, &r, "Choose a font file", UI_BTN_NORMAL)) choose_font(a);
+  if (st->font[0] && row_button(a, &r, "Use the built-in font", UI_BTN_NORMAL)) {
+    st->font[0] = 0;
+    settings_changed(a);
+  }
+  y += r.rh;
+
+  /* --- data --- */
+  section_title(a, x, &y, w, "Your data");
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 176, "Data file");
+  y += r.rh * 0.15f;
+  y += ui_wrapped_text(u, a->store.path, x + r.label_w, y, w - r.label_w, g->theme.fg, true) + 6 * s;
+  row_begin(a, &r, x, y, w, ID_SET_BASE + 192, "");
+  if (row_button(a, &r, "Copy the path", UI_BTN_NORMAL)) copy_data_path(a);
+  if (row_button(a, &r, "Open the folder", UI_BTN_NORMAL)) open_data_folder(a);
+  y += r.rh;
+  y += ui_wrapped_text(u, "Everything is in this one Markdown file. Adderall never sends it anywhere.", x, y, w, g->theme.dim, true) + 4 * s;
+
+  /* --- hotkeys --- */
+  section_title(a, x, &y, w, "Hotkeys");
+  if (a->capture_action >= 0) {
+    SDL_snprintf(buf, sizeof buf, "Press the key for \"%s\". Esc cancels.", ad_action_label((ad_action)a->capture_action));
+    y += ui_wrapped_text(u, buf, x, y, w, g->theme.fg, true) + 4 * s;
+  }
+  if (a->set_msg[0]) y += ui_wrapped_text(u, a->set_msg, x, y, w, g->theme.fg, true) + 4 * s;
+  for (int act = 0; act < AD_ACT_COUNT; act++) {
+    row_begin(a, &r, x, y, w, ID_SET_BASE + 208 + act * 16, ad_action_label((ad_action)act));
+    const ad_binding b = binding_for(a, (ad_action)act);
+    char bs[120];
+    ad_binding_format(&b, bs, sizeof bs);
+    if (a->capture_action == act) SDL_snprintf(bs, sizeof bs, "...");
+    row_text(a, &r, bs, st->hotkey_set[act] ? g->theme.fg : g->theme.dim);
+    r.cx = x + w - (ui_button_width(u, "Change") + ui_button_width(u, "Add a key") + ui_button_width(u, "Reset") + 24 * s);
+    if (r.cx < x + r.label_w + 80 * s) r.cx = x + r.label_w + 80 * s;
+    if (row_button(a, &r, "Change", a->capture_action == act && !a->capture_add ? UI_BTN_SELECTED : 0)) {
+      a->capture_action = act;
+      a->capture_add = false;
+      a->set_msg[0] = 0;
+    }
+    if (row_button(a, &r, "Add a key", b.n >= AD_MAX_BINDINGS ? UI_BTN_DISABLED : (a->capture_action == act && a->capture_add ? UI_BTN_SELECTED : 0))) {
+      a->capture_action = act;
+      a->capture_add = true;
+      a->set_msg[0] = 0;
+    }
+    if (row_button(a, &r, "Reset", st->hotkey_set[act] ? 0 : UI_BTN_DISABLED)) {
+      st->hotkey_set[act] = false;
+      if (a->capture_action == act) a->capture_action = -1;
+      commit(a);
+    }
+    y += r.rh;
+  }
+  y += ui_wrapped_text(u, "Tab and Esc are reserved. Moving around the cells uses the arrow keys by default, and everything here works without a mouse except the measure tool.", x, y, w, g->theme.dim, true) + 4 * s;
+
+  /* --- about --- */
+  section_title(a, x, &y, w, "About");
+  SDL_snprintf(buf, sizeof buf, "Adderall %s. No network, no accounts, no telemetry. It will absolutely, definitely change your life.", ADDERALL_VERSION);
+  y += ui_wrapped_text(u, buf, x, y, w, g->theme.dim, true) + 6 * s;
+
+  gfx_clip(g, NULL);
+  u->use_clip = false;
+  const float used = y - top + pad * 1.2f;
+  if (fabsf(used - a->set_content_h) > 1.0f) {
+    a->set_content_h = used;
+    a->redraw = true;
+  }
+  if (u->want_visible && !a->map_open) {
+    if (u->want_y0 < view.y) a->set_scroll -= view.y - u->want_y0 + 8 * s;
+    else if (u->want_y1 > view.y + view.h) a->set_scroll += u->want_y1 - (view.y + view.h) + 8 * s;
+  }
+  if (a->capture_action >= 0 && !a->map_open) capture_hotkey(a);
+  if (a->map_open) map_frame(a);
 }
 
 /* ---- first launch --------------------------------------------------------- */
@@ -1035,7 +1660,7 @@ static void move_focus(App *a, int dir) {
     a->focus_day = a->model.today;
     if (a->focus_day < a->model.habits[bh[0]].start) a->focus_day = a->model.habits[bh[0]].start;
     a->kb_visible = true;
-    ad_view_ensure_visible(v, a->focus_day);
+    scroll_to_day(a, a->focus_day, false);
     return; /* the first press only shows where the focus is */
   }
   ad_day starts[AD_MAX_BOARD];
@@ -1046,13 +1671,32 @@ static void move_focus(App *a, int dir) {
   a->focus_row = row;
   a->focus_day = day;
   a->kb_visible = true;
-  ad_view_ensure_visible(v, day);
+  scroll_to_day(a, day, false);
 }
 
 static void board_hotkeys(App *a) {
   ui_state *u = &a->ui;
   if (u->text_active) {
     return; /* typing in a field: letters are letters */
+  }
+  if (a->settings_open) {
+    if (a->capture_action >= 0) return; /* the next key press is for the hotkey being changed */
+    if (action_pressed(a, AD_ACT_SETTINGS)) {
+      a->settings_open = false;
+      a->map_open = false;
+      return;
+    }
+    if (ui_take_key(u, SDLK_ESCAPE, 0)) {
+      if (a->map_open) a->map_open = false;
+      else a->settings_open = false;
+    }
+    return;
+  }
+  if (action_pressed(a, AD_ACT_SETTINGS)) {
+    popup_close(a);
+    a->settings_open = true;
+    a->capture_action = -1;
+    return;
   }
   if (action_pressed(a, AD_ACT_HABITS)) {
     if (a->popup_open) popup_close(a);
@@ -1077,7 +1721,7 @@ static void board_hotkeys(App *a) {
   }
   if (action_pressed(a, AD_ACT_TODAY)) {
     layout_view(a);
-    ad_view_center_on(&a->view, a->model.today);
+    scroll_to_day(a, a->model.today, true);
     if (a->cell_focus) a->focus_day = a->model.today;
   }
   if (u->focus != 0) return; /* a button has the keyboard: Enter and Space are for it */
@@ -1104,7 +1748,7 @@ static void frame(App *a) {
   gfx_refresh_scale(&a->g);
   gfx_begin_frame(&a->g);
   ui_begin_frame(&a->ui);
-  a->modal = a->popup_open;
+  a->modal = a->popup_open || a->settings_open;
   if (a->screen == SCREEN_FATAL) {
     fatal_frame(a);
   } else if (a->screen == SCREEN_FIRST) {
@@ -1114,6 +1758,7 @@ static void frame(App *a) {
     board_frame(a);
     corner_buttons_frame(a);
     if (a->popup_open) habit_popup_frame(a);
+    if (a->settings_open) settings_frame(a);
     banners_frame(a);
   }
   ui_end_frame(&a->ui);
@@ -1164,8 +1809,32 @@ static void handle_event(App *a, const SDL_Event *e) {
       break;
     }
     case SDL_EVENT_KEY_DOWN: queue_key(u, &e->key); break;
+    case SDL_EVENT_USER:
+    default:
+      if (a->font_event && e->type == a->font_event) {
+        if (e->user.code == 1) {
+          SDL_snprintf(a->notice, sizeof a->notice, "The file chooser could not be opened on this system.");
+        } else if (e->user.data1) {
+          char *path = (char *)e->user.data1;
+          if (strlen(path) >= sizeof a->model.settings.font) {
+            SDL_snprintf(a->notice, sizeof a->notice, "That file path is too long.");
+          } else {
+            char old[sizeof a->model.settings.font];
+            SDL_strlcpy(old, a->model.settings.font, sizeof old);
+            SDL_strlcpy(a->model.settings.font, path, sizeof a->model.settings.font);
+            apply_settings(a);
+            /* apply_settings falls back to the built-in font and says why when the file is no good */
+            if (strcmp(a->g.font_path, path) != 0) {
+              SDL_strlcpy(a->model.settings.font, old, sizeof a->model.settings.font);
+              apply_settings(a);
+            }
+            commit(a);
+          }
+          SDL_free(path);
+        }
+      }
+      break;
     case SDL_EVENT_TEXT_INPUT: SDL_strlcat(u->text, e->text.text, sizeof u->text); break;
-    default: break;
   }
 }
 
@@ -1228,6 +1897,12 @@ int app_run(int argc, char **argv) {
     apply_timezone(&a);
     ad_model_set_clock(&a.model, clock_day(&a));
   }
+  a.capture_action = -1;
+  a.map_sel = -1;
+  a.map_hl_q = -9999;
+  a.font_event = SDL_RegisterEvents(1);
+  apply_settings(&a);
+  a.first_layout = AD_LAYOUT_HORIZONTAL;
   switch (st) {
     case AD_OPEN_OK: break;
     case AD_OPEN_FRESH: a.screen = SCREEN_FIRST; break;
@@ -1260,7 +1935,7 @@ int app_run(int argc, char **argv) {
   } else {
     while (!a.quit) {
       SDL_Event e;
-      if (SDL_WaitEventTimeout(&e, 500)) {
+      if (SDL_WaitEventTimeout(&e, a.anim_on ? 8 : 500)) {
         do handle_event(&a, &e);
         while (SDL_PollEvent(&e));
       }
@@ -1277,6 +1952,10 @@ int app_run(int argc, char **argv) {
   }
 
   if (a.store_open) ad_store_close(&a.store);
+  map_free_textures(&a);
+  if (a.map_loaded) ad_map_free(&a.map);
+  free(a.zone_std);
+  free(a.zone_order);
   ad_tz_free(a.tz);
   free(a.zones);
   ad_model_free(&a.model);

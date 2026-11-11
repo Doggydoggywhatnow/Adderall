@@ -2,3 +2,4 @@
 data/zoneinfo/** -text
 data/fonts/*.otf binary
 data/fonts/*.ttf binary
+data/map/*.txt -text

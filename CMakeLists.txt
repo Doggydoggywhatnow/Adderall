@@ -7,6 +7,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 option(ADDERALL_BUILD_APP "Build the SDL3 application" ON)
 option(ADDERALL_BUILD_TESTS "Build the tests" ON)
+option(ADDERALL_BUILD_TOOLS "Build the map generator (developer tool)" OFF)
 option(ADDERALL_FETCH_DEPS "Download and build SDL3 / SDL3_ttf when they are not installed" ON)
 
 if(MSVC)
@@ -26,6 +27,7 @@ add_library(adderall_core STATIC
   src/model.c
   src/hotkeys.c
   src/measure.c
+  src/map.c
   src/format.c
   src/platform.c
   src/tz.c
@@ -102,6 +104,13 @@ if(ADDERALL_BUILD_APP)
 
   install(TARGETS adderall RUNTIME DESTINATION bin BUNDLE DESTINATION .)
   install(DIRECTORY data DESTINATION bin)
+endif()
+
+if(ADDERALL_BUILD_TOOLS)
+  add_executable(mapgen tools/mapgen.c)
+  if(UNIX)
+    target_link_libraries(mapgen PRIVATE m)
+  endif()
 endif()
 
 # ---------------------------------------------------------------------------

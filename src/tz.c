@@ -456,6 +456,35 @@ int ad_zones_nearest(const ad_zone_info *z, int n, double lat, double lon) {
   return best;
 }
 
+void ad_zones_std_quarters(const char *dir, const ad_zone_info *z, int n, int year, int *out) {
+  const int64_t jan = (int64_t)ad_day_from_ymd(year, 1, 15) * 86400 + 43200;
+  const int64_t jul = (int64_t)ad_day_from_ymd(year, 7, 15) * 86400 + 43200;
+  for (int i = 0; i < n; i++) {
+    out[i] = 0;
+    ad_tz *tz = ad_tz_load(dir, z[i].name);
+    if (!tz) continue;
+    const int a = ad_tz_offset(tz, jan, NULL), b = ad_tz_offset(tz, jul, NULL);
+    out[i] = (int)lround((a < b ? a : b) / 900.0);
+    ad_tz_free(tz);
+  }
+}
+
+int ad_zones_nearest_in(const ad_zone_info *z, int n, const int *std_quarters, int quarters, double lat, double lon) {
+  int best = -1;
+  double bd = 1e18;
+  const double rad = 3.14159265358979323846 / 180.0;
+  for (int i = 0; i < n; i++) {
+    if (std_quarters[i] != quarters) continue;
+    const double a1 = lat * rad, a2 = z[i].lat * rad, dl = (z[i].lon - lon) * rad;
+    const double h = sin((a2 - a1) / 2) * sin((a2 - a1) / 2) + cos(a1) * cos(a2) * sin(dl / 2) * sin(dl / 2);
+    if (h < bd) {
+      bd = h;
+      best = i;
+    }
+  }
+  return best >= 0 ? best : ad_zones_nearest(z, n, lat, lon);
+}
+
 void ad_tz_format_offset(int off, char *out, size_t cap) {
   const int a = off < 0 ? -off : off;
   const int h = a / 3600, m = (a % 3600) / 60;
