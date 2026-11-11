@@ -24,6 +24,10 @@ add_library(adderall_core STATIC
   src/raster.c
   src/board.c
   src/model.c
+  src/hotkeys.c
+  src/format.c
+  src/platform.c
+  src/store.c
 )
 target_include_directories(adderall_core PUBLIC include)
 if(UNIX)
@@ -66,6 +70,7 @@ if(ADDERALL_BUILD_APP)
   add_executable(adderall WIN32 MACOSX_BUNDLE
     src/main.c
     src/gfx.c
+    src/ui.c
     src/app.c
   )
   target_link_libraries(adderall PRIVATE adderall_core SDL3_ttf::SDL3_ttf SDL3::SDL3)

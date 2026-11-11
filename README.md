@@ -218,7 +218,7 @@ The standard data folder for your operating system *(planned: exact paths may ch
 | macOS | `~/Library/Application Support/Adderall/` |
 | Windows | `%APPDATA%\Adderall\` |
 
-In settings you can **copy the path** or **open the folder** in one click.
+In settings you can **copy the path** or **open the folder** in one click. For testing, or to keep a separate copy of your data, `adderall --data-dir <folder>` (or the `ADDERALL_DATA_DIR` environment variable) uses a different folder.
 
 ### The file format
 
@@ -227,7 +227,7 @@ Plain Markdown: headings, lists, and checkboxes, so it reads well in any editor 
 ```markdown
 # Adderall
 
-adderall-format: 1
+adderall-format: 2
 
 ## Settings
 
@@ -236,6 +236,11 @@ adderall-format: 1
 - layout: horizontal
 - font: default
 - textsize: 16
+- theme: light
+- scale: 100
+- contrast: normal
+- motion: full
+- lastday: 2026-11-12
 - hotkey today: t
 
 ## Habit: Drink water
@@ -256,18 +261,28 @@ adderall-format: 1
 - [x] 2026-11-12
 ```
 
-- `## Settings` holds your time zone, day start, layout, font and text size, and any hotkeys you've remapped.
+- `## Settings` holds your time zone, day start, layout, font and text size, look, and any hotkeys you've remapped.
+  - `timezone` is an IANA name such as `Europe/Paris`. Leave it out and Adderall follows your computer.
+  - `daystart` is when a new day begins, from `00:00` to `11:59`.
+  - `layout` is `horizontal` or `vertical`. `theme` is `light` or `dark`. `contrast` is `normal` or `high`. `motion` is `full` or `reduced`.
+  - `font` is `default` or the path of a `.ttf`/`.otf` file. `textsize` is 8 to 48. `scale` is the interface scale in percent, 50 to 300.
+  - `lastday` is the latest day Adderall has ever shown as today. It is what keeps sealed days sealed if you travel west and your clock goes "back" a day.
+  - `hotkey <action>: <keys>` lines only appear for hotkeys you changed. Keys look like `T`, `Ctrl+,` or `Enter | Space` (several keys for one action are separated by ` | `). The actions are `left`, `right`, `up`, `down`, `today`, `fill`, `skip`, `habits`, `settings` and `layout`.
 - `## Habit: <name>` starts a new habit. Habits appear on the board in the order they're listed.
-- `symbol` is the habit's unique symbol, such as `star`, `triangle`, or `hexagon`.
-- `start` is the habit's first day, and dates are written `YYYY-MM-DD`.
-- `- [x]` is a filled day and `- [/]` is a skipped day. Days that aren't listed are empty.
+- `symbol` is the habit's unique symbol: `star`, `triangle`, `hexagon`, `diamond`, `pentagon`, `plus`, `cross`, `hourglass`, `arrow`, `bolt`, `heart` or `house`.
+- `start` is the habit's first day, and dates are written `YYYY-MM-DD`. It has to come before the habit's days.
+- `- [x]` is a filled day and `- [/]` is a skipped day. Days that aren't listed are empty (`- [ ]` is accepted too and means the same).
 - `archived: yes` marks a habit that's off the board.
 
-If Adderall can't make sense of a line, it tells you which one and leaves the file alone. It never silently throws your data away. It rewrites the file in its own format when it saves, so notes, extra headings, and other text you add to it won't be kept.
+Version 1 files, like the example in earlier versions of this README, are still read. Adderall writes version 2, and refuses (without touching the file) to open a file written by a newer version.
+
+If Adderall can't make sense of a line, it tells you which one and leaves the file alone. It never silently throws your data away. It rewrites the file in its own format when it saves, so notes, extra headings, and other text you add to it aren't kept: they would count as a line Adderall can't read. Windows line endings and a leading byte-order mark are fine.
+
+If the file is damaged beyond that (empty, binary, or not an Adderall file at all), Adderall falls back to the backup and tells you. If a single line can't be read, it shows you that line and offers to use the backup instead; either way the unreadable file is kept as `adderall.md.damaged` rather than overwritten.
 
 ### One window at a time
 
-Adderall locks its data file while it's open. If you launch it a second time, it tells you it's already running instead of opening a second copy that could overwrite the first one's changes. The lock is held by your operating system, so it's released automatically if Adderall quits or crashes, and it never gets stuck.
+Adderall locks its data folder while it's open. If you launch it a second time, it tells you it's already running instead of opening a second copy that could overwrite the first one's changes. The lock is an operating-system file lock on `adderall.lock`, held for as long as Adderall runs, so it's released automatically if Adderall quits or crashes. The lock file itself can safely be left lying around: it's the lock that counts, not the file.
 
 ### Crash-safe saving
 
@@ -276,7 +291,9 @@ Adderall saves as you go, so a crash or power cut can't leave you with half a fi
 1. **Write:** changes go to a temporary file next to your data file.
 2. **Flush:** the temporary file is flushed to disk.
 3. **Swap:** it replaces the real file in one step.
-4. **Back up:** the previous version is kept as a backup copy beside it.
+4. **Back up:** the previous version is kept as a backup copy beside it, `adderall.md.bak`.
+
+(In that order the backup is made just before the swap, so at every moment there is a complete file to open.)
 
 If your main file is ever damaged, Adderall tells you and falls back to the backup instead of starting empty.
 
