@@ -301,7 +301,7 @@ adderall-format: 2
 - `- [x]` is a filled day and `- [/]` is a skipped day. Days that aren't listed are empty (`- [ ]` is accepted too and means the same).
 - `archived: yes` marks a habit that's off the board.
 
-Version 1 files, like the example in earlier versions of this README, are still read. Adderall writes version 2, and refuses (without touching the file) to open a file written by a newer version.
+**Your habits carry over between versions.** A new Adderall always reads the data file of every older version, with nothing lost, and then saves it in the newest format; a file from a newer Adderall than yours is refused untouched rather than guessed at. Version 1 files, like the example in earlier versions of this README, are still read. Adderall writes version 2, and refuses (without touching the file) to open a file written by a newer version.
 
 If Adderall can't make sense of a line, it tells you which one and leaves the file alone. It never silently throws your data away. It rewrites the file in its own format when it saves, so notes, extra headings, and other text you add to it aren't kept: they would count as a line Adderall can't read. Windows line endings and a leading byte-order mark are fine.
 

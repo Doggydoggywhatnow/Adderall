@@ -20,6 +20,7 @@ If you deviate from the README, update the README in the same change.
 - **Privacy:** no network requests, no telemetry, no accounts, no update checks, no crash reports. Data stays local.
 - **One file:** habits, marked days, and settings live in a single Markdown file (`adderall.md`) in the OS standard data directory. No database.
 - **Crash-safe saves:** write to a temporary file, flush it to disk, swap it over the real file, and keep a backup of the previous version. Never leave a half-written data file.
+- **Data survives upgrades:** habit data must be retained between Adderall versions. Every new version reads every older data file (all format versions ever released) with nothing lost, and writes the newest format. Never remove or change the meaning of a format line without a migration; only add. Keep a test fixture for each released format version in `tests/test_format.c`.
 - **Never lose data silently:** if the file has a line the parser can't read, report which line and leave the file alone. If the main file is damaged, fall back to the backup and tell the user.
 - **Only touch Adderall's own data folder.** Never read, write, or scan anything else on the user's device.
 - **Past days are sealed.** Once a day ends, its state can't be edited. Today and future days stay editable. Enforce this in the data layer, not just the UI.

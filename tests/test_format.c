@@ -58,6 +58,30 @@ static void test_readme_example(void) {
   ad_model_free(&m);
 }
 
+/* Upgrades keep every habit: a version 1 file is read in full and saved as
+ * the newest version without losing a single day. */
+static void test_upgrade_from_v1(void) {
+  ad_model m;
+  ad_parse_error e;
+  CHECK_EQ_INT(parse(README_EXAMPLE, &m, &e), AD_PARSE_OK);
+  size_t len;
+  char *t = ad_format_write(&m, &len);
+  CHECK(strstr(t, "adderall-format: 2") != NULL);
+  ad_model back;
+  CHECK_EQ_INT(ad_format_parse(t, len, &back, &e), AD_PARSE_OK);
+  CHECK_EQ_INT(back.n_habits, 2);
+  CHECK_EQ_STR(back.habits[0].name, "Drink water");
+  CHECK_EQ_INT(back.habits[0].n_marks, 3);
+  CHECK_EQ_INT(ad_habit_get(&back.habits[0], ad_day_from_ymd(2026, 11, 13)), AD_SKIPPED);
+  CHECK(back.habits[1].archived);
+  CHECK_EQ_INT(ad_habit_get(&back.habits[1], ad_day_from_ymd(2026, 11, 12)), AD_FILLED);
+  CHECK_EQ_STR(back.settings.timezone, "America/New_York");
+  CHECK_EQ_INT(back.settings.daystart, 240);
+  free(t);
+  ad_model_free(&back);
+  ad_model_free(&m);
+}
+
 static void test_roundtrip(void) {
   ad_model m;
   ad_model_init(&m);
@@ -308,6 +332,7 @@ static void test_hotkeys(void) {
 
 int main(void) {
   test_readme_example();
+  test_upgrade_from_v1();
   test_roundtrip();
   test_empty_model();
   test_tolerance();
