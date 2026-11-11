@@ -198,3 +198,58 @@ bool ad_name_equal(const char *a, const char *b) {
   }
   return i == la && j == lb;
 }
+
+/* ---- the rules ------------------------------------------------------------ */
+
+const char *ad_result_message(ad_result r) {
+  switch (r) {
+    case AD_OK: return "";
+    case AD_ERR_SEALED: return "That day is over, so it is sealed.";
+    case AD_ERR_BEFORE_START: return "That is before the habit started.";
+    case AD_ERR_ARCHIVED: return "Archived habits can't be changed. Restore it first.";
+    case AD_ERR_NO_HABIT: return "There is no such habit.";
+    case AD_ERR_RANGE: return "That is too far ahead to plan.";
+  }
+  return "";
+}
+
+bool ad_model_is_sealed(const ad_model *m, ad_day day) { return day < m->today; }
+
+ad_result ad_model_set_day(ad_model *m, int habit, ad_day day, ad_state s) {
+  if (habit < 0 || habit >= m->n_habits) return AD_ERR_NO_HABIT;
+  ad_habit *h = &m->habits[habit];
+  if (h->archived) return AD_ERR_ARCHIVED;
+  if (day < h->start) return AD_ERR_BEFORE_START;
+  if (ad_model_is_sealed(m, day)) return AD_ERR_SEALED;
+  if (day > m->today + AD_HORIZON_DAYS) return AD_ERR_RANGE;
+  if (ad_habit_get(h, day) == s) return AD_OK;
+  return ad_habit_put(h, day, s) ? AD_OK : AD_ERR_RANGE;
+}
+
+ad_result ad_model_toggle_fill(ad_model *m, int habit, ad_day day) {
+  if (habit < 0 || habit >= m->n_habits) return AD_ERR_NO_HABIT;
+  const ad_state cur = ad_habit_get(&m->habits[habit], day);
+  return ad_model_set_day(m, habit, day, cur == AD_FILLED ? AD_EMPTY : AD_FILLED);
+}
+
+ad_result ad_model_toggle_skip(ad_model *m, int habit, ad_day day) {
+  if (habit < 0 || habit >= m->n_habits) return AD_ERR_NO_HABIT;
+  const ad_state cur = ad_habit_get(&m->habits[habit], day);
+  return ad_model_set_day(m, habit, day, cur == AD_SKIPPED ? AD_EMPTY : AD_SKIPPED);
+}
+
+bool ad_model_set_clock(ad_model *m, ad_day clock_day) {
+  ad_day high = m->settings.lastday;
+  bool changed = false;
+  if (high != AD_DAY_NONE && high > clock_day + 2) {
+    high = AD_DAY_NONE; /* the clock must have been wrong: trust it now */
+    changed = true;
+  }
+  const ad_day today = (high != AD_DAY_NONE && high > clock_day) ? high : clock_day;
+  m->today = today;
+  if (m->settings.lastday != today) {
+    m->settings.lastday = today;
+    changed = true;
+  }
+  return changed;
+}

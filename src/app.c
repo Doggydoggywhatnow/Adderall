@@ -11,6 +11,7 @@
 #include "gfx.h"
 #include "model.h"
 #include "store.h"
+#include "tz.h"
 #include "ui.h"
 
 typedef enum { SCREEN_BOARD, SCREEN_FATAL } Screen;
@@ -27,6 +28,11 @@ typedef struct {
   bool store_open;
   ad_view view;
   char bundled_font[1100];
+  char zoneinfo_dir[1100];
+  ad_zone_info *zones;
+  int nzones;
+  ad_tz *tz;
+  char tz_name[64]; /* the zone in use (the setting, or the computer's own) */
   Screen screen;
   char fatal_title[120];
   char fatal_text[1200];
@@ -58,12 +64,35 @@ static bool resource_path(const char *rel, char *out, size_t cap) {
   return false;
 }
 
-/* The time zone logic arrives in a later slice; until then, the computer's clock. */
-static ad_day system_today(void) {
-  SDL_Time now;
-  SDL_DateTime dt;
-  if (!SDL_GetCurrentTime(&now) || !SDL_TimeToDateTime(now, &dt, true)) return ad_day_from_ymd(2026, 1, 1);
-  return ad_day_from_ymd(dt.year, dt.month, dt.day);
+/* ---- time ---------------------------------------------------------------- */
+
+/* Use the zone named in the settings, or else the computer's own. */
+static void apply_timezone(App *a) {
+  const char *want = a->model.settings.timezone;
+  char sys[96];
+  ad_tz *tz = NULL;
+  if (want[0]) tz = ad_tz_load(a->zoneinfo_dir, want);
+  if (tz) {
+    SDL_snprintf(a->tz_name, sizeof a->tz_name, "%s", want);
+  } else {
+    if (want[0]) SDL_snprintf(a->notice, sizeof a->notice, "The time zone \"%s\" in your data file is not one Adderall knows, so your computer's time zone is used for now.", want);
+    ad_tz_detect_system(a->zoneinfo_dir, a->zones, a->nzones, sys, sizeof sys);
+    tz = ad_tz_load(a->zoneinfo_dir, sys);
+    if (!tz) tz = ad_tz_load(a->zoneinfo_dir, "UTC");
+    SDL_snprintf(a->tz_name, sizeof a->tz_name, "%s", sys);
+  }
+  if (a->tz) ad_tz_free(a->tz);
+  a->tz = tz;
+}
+
+static ad_day clock_day(const App *a) {
+  return ad_tz_day(a->tz, ad_plat_now(), a->model.settings.daystart);
+}
+
+/* Called every frame: today changes when the day rolls over. */
+static void update_clock(App *a, bool *saved_needed) {
+  if (!a->tz) return;
+  if (ad_model_set_clock(&a->model, clock_day(a))) *saved_needed = true;
 }
 
 /* file:///path with everything unusual percent-encoded, for opening a folder. */
@@ -173,12 +202,9 @@ static void layout_view(App *a) {
 static void click_cell(App *a, int row, ad_day day, bool left) {
   ad_habit *h = &a->model.habits[row];
   if (day < h->start) return;
-  const ad_state cur = ad_habit_get(h, day);
-  ad_state next;
-  if (left) next = (cur == AD_FILLED) ? AD_EMPTY : AD_FILLED;
-  else next = (cur == AD_SKIPPED) ? AD_EMPTY : AD_SKIPPED;
-  ad_habit_put(h, day, next);
-  commit(a);
+  /* Sealed days simply ignore the click (the data layer refuses it anyway). */
+  const ad_result r = left ? ad_model_toggle_fill(&a->model, row, day) : ad_model_toggle_skip(&a->model, row, day);
+  if (r == AD_OK) commit(a);
 }
 
 static void board_frame(App *a) {
@@ -332,7 +358,7 @@ static void fatal_frame(App *a) {
       if (st == AD_OPEN_FROM_BACKUP) {
         a->screen = SCREEN_BOARD;
         SDL_snprintf(a->notice, sizeof a->notice, "%s", msg);
-        a->model.today = system_today();
+        ad_model_set_clock(&a->model, clock_day(a));
         ad_view_center_on(&a->view, a->model.today);
       } else {
         SDL_snprintf(a->fatal_text + strlen(a->fatal_text), sizeof a->fatal_text - strlen(a->fatal_text), "\n\n%s", msg);
@@ -348,6 +374,11 @@ static void fatal_frame(App *a) {
 /* ---- the frame ---------------------------------------------------------- */
 
 static void frame(App *a) {
+  if (a->screen == SCREEN_BOARD) {
+    bool need = false;
+    update_clock(a, &need);
+    if (need) commit(a);
+  }
   gfx_refresh_scale(&a->g);
   gfx_begin_frame(&a->g);
   ui_begin_frame(&a->ui);
@@ -451,7 +482,20 @@ int app_run(int argc, char **argv) {
   ad_parse_error perr;
   const ad_open_status st = ad_store_open(&a.store, data_dir, &a.model, &perr, msg, sizeof msg);
   a.store_open = true;
-  a.model.today = system_today();
+  {
+    char zf[1100];
+    if (resource_path("zoneinfo/zone.tab", zf, sizeof zf)) {
+      zf[strlen(zf) - strlen("/zone.tab")] = 0;
+      SDL_snprintf(a.zoneinfo_dir, sizeof a.zoneinfo_dir, "%s", zf);
+      a.nzones = ad_zones_load(a.zoneinfo_dir, &a.zones);
+    }
+    if (a.nzones == 0) {
+      fprintf(stderr, "Adderall: could not find its bundled time zone data.\n");
+      return 1;
+    }
+    apply_timezone(&a);
+    ad_model_set_clock(&a.model, clock_day(&a));
+  }
   switch (st) {
     case AD_OPEN_OK: break;
     case AD_OPEN_FRESH:
@@ -501,6 +545,8 @@ int app_run(int argc, char **argv) {
   }
 
   if (a.store_open) ad_store_close(&a.store);
+  ad_tz_free(a.tz);
+  free(a.zones);
   ad_model_free(&a.model);
   gfx_shutdown(&a.g);
   SDL_DestroyRenderer(a.ren);

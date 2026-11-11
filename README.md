@@ -135,7 +135,7 @@ If you try to add a ninth habit, Adderall asks you to archive or delete one firs
 - **Click a filled cell** again to clear it, as long as the day isn't sealed.
 - **Right-click** a cell to **skip** that day. A skipped day isn't filled, but it isn't a miss either. Right-click it again to undo the skip.
 - **Future days** can be filled in or skipped ahead of time.
-- **Past days are sealed.** Once a day has happened, its state can't be edited. Today stays editable until it ends.
+- **Past days are sealed.** Once a day has happened, its state can't be edited. Today stays editable until it ends. (This is enforced in the data layer, not just by the interface: even a bug in the window code can't change a sealed day.)
 
 Sealing keeps the record honest: you can't quietly rewrite last Tuesday. It also means a mis-click yesterday is permanent.
 
@@ -173,9 +173,11 @@ In settings, a small pop-out shows a **map of the world with its time zones sepa
 
 1. **Rollover:** at your new-day time, today becomes yesterday, yesterday is sealed, and a new cell becomes today.
 2. **Daylight saving** is handled for you, using your time zone's rules.
-3. **Changing your time zone** only affects days from now on. Days that are already sealed stay sealed.
+3. **Changing your time zone** only affects days from now on. Days that are already sealed stay sealed. Adderall remembers the latest day it has shown as today (`lastday` in the data file), so flying west, where your clock's date goes back, never reopens a sealed day: today simply stays put until the local date catches up. (If that remembered day is more than two days ahead of the clock, the clock must have been set wrong at some point, so the clock wins.)
 4. **Defaults:** your computer's time zone, with the day starting at midnight.
-5. **Built in:** the world map and a time zone database come with Adderall, so it works the same on every system, including Windows, and never needs the internet.
+5. **Built in:** the world map and a time zone database come with Adderall, so it works the same on every system, including Windows, and never needs the internet. The database is the public-domain [IANA Time Zone Database](https://www.iana.org/time-zones) (release 2026e, the zones of `zone.tab`), compiled to TZif files in the `data/zoneinfo` folder next to the program; Adderall reads them itself rather than asking the operating system.
+6. **New-day time** can be anywhere from 00:00 to 11:59, and follows your zone's wall clock, so it stays at 04:00 through a daylight saving change.
+7. **Planning ahead** works up to ten years from today.
 
 ## Look and feel
 

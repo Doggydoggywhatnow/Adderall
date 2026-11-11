@@ -7,6 +7,8 @@
 
 #include "platform.h"
 
+#include "date.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -146,6 +148,12 @@ bool ad_plat_remove(const char *path) {
   const bool ok = DeleteFileW(w) != 0 || GetLastError() == ERROR_FILE_NOT_FOUND;
   free(w);
   return ok;
+}
+
+bool ad_plat_system_tz_name(char *out, size_t cap) {
+  (void)out;
+  (void)cap;
+  return false; /* Windows keeps its own zone names: detected by offsets instead */
 }
 
 struct ad_lock {
@@ -311,6 +319,41 @@ bool ad_plat_remove(const char *path) {
   return unlink(path) == 0 || errno == ENOENT;
 }
 
+bool ad_plat_system_tz_name(char *out, size_t cap) {
+  const char *tz = getenv("TZ");
+  if (tz && *tz) {
+    if (*tz == ':') tz++;
+    if (*tz && *tz != '/') {
+      snprintf(out, cap, "%s", tz);
+      return true;
+    }
+  }
+  char link[AD_PATH_MAX];
+  const ssize_t n = readlink("/etc/localtime", link, sizeof link - 1);
+  if (n > 0) {
+    link[n] = 0;
+    const char *z = strstr(link, "zoneinfo/");
+    if (z) {
+      snprintf(out, cap, "%s", z + 9);
+      return true;
+    }
+  }
+  FILE *f = fopen("/etc/timezone", "r");
+  if (f) {
+    char line[128];
+    const bool ok = fgets(line, sizeof line, f) != NULL;
+    fclose(f);
+    if (ok) {
+      line[strcspn(line, "\r\n")] = 0;
+      if (line[0]) {
+        snprintf(out, cap, "%s", line);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 struct ad_lock {
   int fd;
 };
@@ -340,3 +383,26 @@ void ad_plat_unlock(ad_lock *l) {
   free(l);
 }
 #endif
+
+/* ======================================================================== */
+/* Shared: the system clock. */
+#include <time.h>
+
+int64_t ad_plat_now(void) { return (int64_t)time(NULL); }
+
+int ad_plat_local_offset(int64_t utc) {
+  time_t t = (time_t)utc;
+  struct tm lt, gt;
+#ifdef _WIN32
+  localtime_s(&lt, &t);
+  gmtime_s(&gt, &t);
+#else
+  localtime_r(&t, &lt);
+  gmtime_r(&t, &gt);
+#endif
+  /* Compare the two wall clocks as if both were UTC. */
+  const int64_t ld = ad_day_from_ymd(lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday);
+  const int64_t gd = ad_day_from_ymd(gt.tm_year + 1900, gt.tm_mon + 1, gt.tm_mday);
+  const long diff = (long)((ld - gd) * 86400 + (lt.tm_hour - gt.tm_hour) * 3600 + (lt.tm_min - gt.tm_min) * 60 + (lt.tm_sec - gt.tm_sec));
+  return (int)diff;
+}

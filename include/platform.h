@@ -42,4 +42,11 @@ typedef struct ad_lock ad_lock;
 int ad_plat_lock(const char *path, ad_lock **out);
 void ad_plat_unlock(ad_lock *lock);
 
+/* The computer's idea of time, for detecting its time zone. */
+int64_t ad_plat_now(void);                 /* seconds since 1970-01-01 UTC */
+int ad_plat_local_offset(int64_t utc);     /* seconds east of UTC, by the system's rules */
+/* The IANA name of the computer's time zone, if the system states one
+ * ($TZ, /etc/localtime, /etc/timezone). False where it does not (Windows). */
+bool ad_plat_system_tz_name(char *out, size_t cap);
+
 #endif

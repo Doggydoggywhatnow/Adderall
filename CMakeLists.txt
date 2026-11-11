@@ -27,6 +27,7 @@ add_library(adderall_core STATIC
   src/hotkeys.c
   src/format.c
   src/platform.c
+  src/tz.c
   src/store.c
 )
 target_include_directories(adderall_core PUBLIC include)

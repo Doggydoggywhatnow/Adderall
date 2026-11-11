@@ -92,6 +92,38 @@ bool ad_name_equal(const char *a, const char *b);
 /* Strict UTF-8 check (no overlong forms, no surrogates, nothing above U+10FFFF). */
 bool ad_utf8_valid(const char *s, size_t len);
 
+/* ---- the rules ------------------------------------------------------------ */
+
+typedef enum {
+  AD_OK = 0,
+  AD_ERR_SEALED,        /* the day has ended */
+  AD_ERR_BEFORE_START,  /* before the habit's first day */
+  AD_ERR_ARCHIVED,      /* archived habits are read-only */
+  AD_ERR_NO_HABIT,
+  AD_ERR_RANGE,         /* too far in the future */
+} ad_result;
+
+const char *ad_result_message(ad_result r);
+
+/* Past days are sealed: once a day has ended it can't change. Today and the
+ * days ahead can. This is enforced here, whatever the interface does. */
+bool ad_model_is_sealed(const ad_model *m, ad_day day);
+
+/* Set one day of one habit, applying the rules above. */
+ad_result ad_model_set_day(ad_model *m, int habit, ad_day day, ad_state s);
+
+/* Left-click / right-click semantics: fill (or clear a filled day), skip (or
+ * clear a skipped day). Clicking the other mark replaces it. */
+ad_result ad_model_toggle_fill(ad_model *m, int habit, ad_day day);
+ad_result ad_model_toggle_skip(ad_model *m, int habit, ad_day day);
+
+/* Tell the model what day the clock says it is. Today never goes backwards
+ * (so a trip west can't unseal a day), unless the stored high-water mark is
+ * more than 2 days ahead of the clock, which can only mean the clock was
+ * wrong, and then the clock wins. Returns true if the stored settings changed
+ * (and so the file should be saved). */
+bool ad_model_set_clock(ad_model *m, ad_day clock_day);
+
 /* Add a habit at the end. Returns its index, or -1 if out of memory. */
 int ad_model_add_raw(ad_model *m, const char *name, ad_symbol sym, ad_day start);
 
