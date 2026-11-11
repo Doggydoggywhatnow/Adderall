@@ -166,3 +166,37 @@ void ad_view_center_on(ad_view *v, ad_day day) {
   }
   ad_view_update(v);
 }
+
+bool ad_view_move(const ad_view *v, const ad_day *starts, int dir, int *row, ad_day *day) {
+  const int nb = v->rows;
+  if (nb <= 0 || *row < 0 || *row >= nb) return false;
+  int r = *row;
+  ad_day d = *day;
+  if (dir == 0) {
+    if (d - 1 >= starts[r]) d--;
+  } else if (dir == 1) {
+    if (d + 1 <= v->last) d++;
+  } else if (v->layout == AD_LAYOUT_HORIZONTAL) {
+    const int r2 = r + (dir == 2 ? -1 : 1);
+    if (r2 >= 0 && r2 < nb) {
+      r = r2;
+      if (d < starts[r]) d = starts[r];
+    }
+  } else {
+    int chunk, col;
+    ad_view_chunk_of(v, d, &chunk, &col);
+    const int line = chunk * nb + r + (dir == 2 ? -1 : 1);
+    if (line >= 0) {
+      const int c2 = line / nb, r2 = line % nb;
+      const ad_day d2 = v->origin + c2 * v->per_line + col;
+      if (d2 <= v->last && d2 >= starts[r2]) {
+        r = r2;
+        d = d2;
+      }
+    }
+  }
+  const bool changed = r != *row || d != *day;
+  *row = r;
+  *day = d;
+  return changed;
+}

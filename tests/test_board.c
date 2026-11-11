@@ -36,8 +36,56 @@ static void check_roundtrip(const ad_view *v) {
   }
 }
 
+static void test_moves(void) {
+  const ad_day o = 1000;
+  /* three habits; the second started 5 days in, the third 9 days in */
+  const ad_day starts[3] = {o, o + 5, o + 9};
+  ad_view h = make(AD_LAYOUT_HORIZONTAL, 3, o, o + 100);
+  int row = 0;
+  ad_day day = o + 2;
+  CHECK(ad_view_move(&h, starts, 1, &row, &day));
+  CHECK_EQ_INT(day, o + 3);
+  CHECK(ad_view_move(&h, starts, 0, &row, &day));
+  CHECK(ad_view_move(&h, starts, 0, &row, &day));
+  CHECK(ad_view_move(&h, starts, 0, &row, &day));
+  CHECK_EQ_INT(day, o);
+  CHECK(!ad_view_move(&h, starts, 0, &row, &day)); /* the first day is as far back as it goes */
+  day = o + 5;
+  row = 1;
+  CHECK(!ad_view_move(&h, starts, 0, &row, &day)); /* a later habit starts later */
+  CHECK_EQ_INT(day, o + 5);
+  /* down onto a row that has not started yet lands on its first day */
+  row = 1;
+  day = o + 6;
+  CHECK(ad_view_move(&h, starts, 3, &row, &day));
+  CHECK_EQ_INT(row, 2);
+  CHECK_EQ_INT(day, o + 9);
+  CHECK(!ad_view_move(&h, starts, 3, &row, &day)); /* nothing below the last habit */
+  CHECK(ad_view_move(&h, starts, 2, &row, &day));
+  CHECK_EQ_INT(row, 1);
+  row = 0;
+  day = o + 100;
+  CHECK(!ad_view_move(&h, starts, 1, &row, &day)); /* the end of the plan */
+
+  /* vertical: lines walk habit by habit, then on to the next piece */
+  ad_view v = make(AD_LAYOUT_VERTICAL, 2, o, o + 100); /* 7 days per line */
+  const ad_day vs[2] = {o, o};
+  row = 1;
+  day = o + 3;
+  CHECK(ad_view_move(&v, vs, 3, &row, &day));         /* below the last habit: the next piece */
+  CHECK_EQ_INT(row, 0);
+  CHECK_EQ_INT(day, o + 7 + 3);
+  CHECK(ad_view_move(&v, vs, 2, &row, &day));         /* and back up */
+  CHECK_EQ_INT(row, 1);
+  CHECK_EQ_INT(day, o + 3);
+  row = 0;
+  day = o + 2;
+  CHECK(!ad_view_move(&v, vs, 2, &row, &day));        /* above the very first line */
+}
+
 int main(void) {
   const ad_day o = 1000;
+  test_moves();
 
   /* ---- horizontal ---- */
   ad_view h = make(AD_LAYOUT_HORIZONTAL, 3, o, o + 100);

@@ -98,13 +98,15 @@ Days always fill **left to right**. You choose how the board behaves when a line
 | Layout | Description |
 | --- | --- |
 | Horizontal | The default. Each habit's line keeps expanding to the right forever, like a timeline that never ends. |
-| Vertical | Cells run all the way to the right edge, then start again from the left on the line underneath, over and over, like text wrapping down a page. |
+| Vertical | Cells run all the way to the right edge, then start again from the left on the line underneath, over and over, like text wrapping down a page. Each piece of the timeline shows all your habits, one line each, so today's squircles still line up. |
 
 The layout is **board-wide**: it applies to all your habits at once, and you can switch it any time in settings.
 
 A larger **squircle** marks the current day, so you can always find where you are.
 
-**Moving around:** scroll (mouse wheel or trackpad) or use the arrow keys to move through your days. You can go back as far as the first day the habit was created. In the vertical layout you scroll up and down, and in the horizontal layout left and right.
+**Moving around:** scroll (mouse wheel or trackpad) or use the arrow keys to move through your days. You can go back as far as the first day the habit was created (the board starts at your oldest habit; newer habits' rows are simply empty before their own first day). In the vertical layout you scroll up and down, and in the horizontal layout left and right. Dragging never scrolls, because dragging belongs to the measure tool. The board opens with today in view.
+
+With the keyboard, the arrow keys move a focused cell (the first press shows where the focus is) and the board scrolls to keep it in view. A line at the bottom says which habit and day it is, and whether the day is sealed. In the vertical layout, up and down walk through the lines like text: habit after habit, then on to the next piece of the timeline. `Tab` moves between the corner buttons and `Esc` brings you back to the board.
 
 **Telling rows apart:** each row starts with its own **unique cell** showing a symbol that stands for the habit: a star, a triangle, a hexagon, and so on. No two habits on the board share a symbol. Hover over the cell and a tooltip tells you which habit it is.
 

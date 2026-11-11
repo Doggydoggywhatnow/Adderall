@@ -1,5 +1,6 @@
 #include "model.h"
 #include "test.h"
+#include "platform.h"
 #include "tz.h"
 
 #include <stdlib.h>
@@ -291,7 +292,26 @@ static void test_zone_list(void) {
   free(z);
 }
 
+static void test_zone_tab_crlf(void) {
+  /* A checkout with Windows line endings must read the same. */
+  char dir[512], path[600];
+  snprintf(dir, sizeof dir, "%s/zt_crlf", ADDERALL_TEST_TMP);
+  ad_plat_mkdir_p(dir);
+  snprintf(path, sizeof path, "%s/zone.tab", dir);
+  const char *tab = "# comment\r\nFR\t+4852+00220\tEurope/Paris\r\nJP\t+353916+1394441\tAsia/Tokyo\tHonshu\r\n";
+  CHECK(ad_plat_write_durable(path, tab, strlen(tab)));
+  ad_zone_info *z;
+  const int n = ad_zones_load(dir, &z);
+  CHECK_EQ_INT(n, 2);
+  if (n == 2) {
+    CHECK_EQ_STR(z[0].name, "Europe/Paris");
+    CHECK_EQ_STR(z[1].name, "Asia/Tokyo");
+  }
+  free(z);
+}
+
 int main(void) {
+  test_zone_tab_crlf();
   test_real_zones();
   test_posix_rules();
   test_days();

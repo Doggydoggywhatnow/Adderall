@@ -78,4 +78,10 @@ void ad_view_center_on(ad_view *v, ad_day day);
 /* Which chunk and column a day falls in (vertical layout). */
 void ad_view_chunk_of(const ad_view *v, ad_day day, int *chunk, int *col);
 
+/* Keyboard movement. `starts[row]` is each row's first day. dir: 0 left,
+ * 1 right, 2 up, 3 down. Left stops at the habit's first day. In the vertical
+ * layout up/down walk through the lines like text: habit after habit, then
+ * on to the next piece of the timeline. Returns true if the cell changed. */
+bool ad_view_move(const ad_view *v, const ad_day *starts, int dir, int *row, ad_day *day);
+
 #endif

@@ -52,6 +52,12 @@ typedef struct {
   bool modal;           /* a pop-up is open: the board does not react */
   bool redraw;          /* draw once more right away (a pop-up changed size) */
 
+  /* the focused cell, for the keyboard */
+  bool cell_focus;
+  int focus_row;        /* board row */
+  ad_day focus_day;
+  bool kb_visible;      /* draw the focus ring (the keyboard is in use) */
+
   /* the habit pop-up */
   bool popup_open;
   EditMode edit;
@@ -286,10 +292,15 @@ static void board_frame(App *a) {
   if (hover_cell && hover_day < m->habits[bh[hover_row]].start) hover_cell = false;
   if (ad_rect_has(a->banner_rect, u->mx, u->my)) hover_cell = false;
 
-  if (hover_cell && !u->consumed_click) {
-    if (u->lpress) click_cell(a, bh[hover_row], hover_day, true);
-    else if (u->rpress) click_cell(a, bh[hover_row], hover_day, false);
+  if (hover_cell && !u->consumed_click && (u->lpress || u->rpress)) {
+    a->cell_focus = true;
+    a->focus_row = hover_row;
+    a->focus_day = hover_day;
+    a->kb_visible = false;
+    u->focus = 0;
+    click_cell(a, bh[hover_row], hover_day, u->lpress);
   }
+  if (a->cell_focus && a->focus_row >= nb) a->cell_focus = false;
 
   /* Cells and headers are clipped so they slide under the symbol column. */
   const bool horiz = v->layout == AD_LAYOUT_HORIZONTAL;
@@ -319,7 +330,8 @@ static void board_frame(App *a) {
       ad_rect rc;
       ad_view_cell_rect(v, r, d, &rc);
       if (rc.y + rc.h < v->y || rc.y > v->y + v->h) continue;
-      draw_cell(a, rc, ad_habit_get(h, d), d == m->today, hover_cell && r == hover_row && d == hover_day, false);
+      draw_cell(a, rc, ad_habit_get(h, d), d == m->today, hover_cell && r == hover_row && d == hover_day,
+                a->cell_focus && a->kb_visible && u->focus == 0 && r == a->focus_row && d == a->focus_day);
     }
   }
   gfx_clip(g, NULL);
@@ -345,6 +357,18 @@ static void board_frame(App *a) {
     char buf[64];
     format_long_date(hover_day, buf, sizeof buf);
     ui_tooltip(u, buf, hover_day == m->today ? "Today" : NULL, u->mx, u->my);
+  }
+
+  /* With the keyboard there is no hover, so say what the focused cell is. */
+  if (a->cell_focus && a->kb_visible && u->focus == 0 && !a->modal) {
+    static const char *const STATE[3] = {"empty", "filled", "skipped"};
+    char date[64], line[200];
+    format_long_date(a->focus_day, date, sizeof date);
+    const ad_habit *h = &m->habits[bh[a->focus_row]];
+    SDL_snprintf(line, sizeof line, "%s, %s: %s%s", h->name, date, STATE[ad_habit_get(h, a->focus_day)], a->focus_day == m->today ? " (today)" : (a->focus_day < m->today ? " (sealed)" : ""));
+    int W, H;
+    SDL_GetWindowSizeInPixels(a->win, &W, &H);
+    gfx_text_center(g, line, 0, H - corner_bar_h(a), (float)W, corner_bar_h(a), g->theme.dim);
   }
 }
 
@@ -915,6 +939,33 @@ static void first_frame(App *a) {
 
 /* ---- the frame ---------------------------------------------------------- */
 
+/* Move the focused cell. dir: 0 left, 1 right, 2 up, 3 down. */
+static void move_focus(App *a, int dir) {
+  int bh[AD_MAX_BOARD];
+  const int nb = board_habits(a, bh);
+  if (nb == 0) return;
+  layout_view(a);
+  ad_view *v = &a->view;
+  if (!a->cell_focus) {
+    a->cell_focus = true;
+    a->focus_row = 0;
+    a->focus_day = a->model.today;
+    if (a->focus_day < a->model.habits[bh[0]].start) a->focus_day = a->model.habits[bh[0]].start;
+    a->kb_visible = true;
+    ad_view_ensure_visible(v, a->focus_day);
+    return; /* the first press only shows where the focus is */
+  }
+  ad_day starts[AD_MAX_BOARD];
+  for (int i = 0; i < nb; i++) starts[i] = a->model.habits[bh[i]].start;
+  int row = a->focus_row;
+  ad_day day = a->focus_day;
+  ad_view_move(v, starts, dir, &row, &day);
+  a->focus_row = row;
+  a->focus_day = day;
+  a->kb_visible = true;
+  ad_view_ensure_visible(v, day);
+}
+
 static void board_hotkeys(App *a) {
   ui_state *u = &a->ui;
   if (u->text_active) {
@@ -944,6 +995,20 @@ static void board_hotkeys(App *a) {
   if (action_pressed(a, AD_ACT_TODAY)) {
     layout_view(a);
     ad_view_center_on(&a->view, a->model.today);
+    if (a->cell_focus) a->focus_day = a->model.today;
+  }
+  if (u->focus != 0) return; /* a button has the keyboard: Enter and Space are for it */
+  if (action_pressed(a, AD_ACT_LEFT)) move_focus(a, 0);
+  if (action_pressed(a, AD_ACT_RIGHT)) move_focus(a, 1);
+  if (action_pressed(a, AD_ACT_UP)) move_focus(a, 2);
+  if (action_pressed(a, AD_ACT_DOWN)) move_focus(a, 3);
+  if (a->cell_focus && a->kb_visible) {
+    int bh[AD_MAX_BOARD];
+    const int nb = board_habits(a, bh);
+    if (a->focus_row < nb) {
+      if (action_pressed(a, AD_ACT_FILL)) click_cell(a, bh[a->focus_row], a->focus_day, true);
+      if (action_pressed(a, AD_ACT_SKIP)) click_cell(a, bh[a->focus_row], a->focus_day, false);
+    }
   }
 }
 
