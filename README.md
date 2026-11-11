@@ -282,19 +282,22 @@ If your main file is ever damaged, Adderall tells you and falls back to the back
 
 ## Building from source
 
-*(planned: build instructions will be added as the project takes shape.)*
+Requirements:
 
-Expected requirements:
-
-- A C compiler (GCC, Clang, or MSVC)
-- CMake
-- SDL3
+- A C11 compiler (GCC, Clang, or MSVC)
+- CMake 3.16 or newer
+- [SDL3](https://libsdl.org) and SDL3_ttf. If CMake can't find them installed, it downloads and builds them for you (release 3.4.8 and 3.2.2). That download happens only when you build; the finished program never touches the network. On Linux, building SDL3 from source needs the usual desktop development packages (X11, Wayland, and so on); see `.github/workflows/ci.yml` for the exact list.
 
 ```bash
 git clone <repository-url> Adderall
 cd Adderall
-# build steps coming soon
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build
+./build/adderall
 ```
+
+Use `-DADDERALL_FETCH_DEPS=OFF` to forbid downloads, and `-DADDERALL_BUILD_APP=OFF` to build and test only the window-free core.
 
 ## Usage
 
