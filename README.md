@@ -1,0 +1,453 @@
+# Adderall
+
+**A grid-based habit tracker for the things you keep meaning to do.**
+
+Adderall is a graphical habit tracker written in C. It shows your habits as lines of cells, one cell per day, and makes keeping up with them feel as simple as filling in a square. No accounts, no uploads, no subscriptions: just your habits, on your device. It will also absolutely, definitely change your life.
+
+> **Status:** early development. Sections marked *(planned)* describe where Adderall is headed rather than what ships today.
+
+---
+
+## Table of contents
+
+- [Why Adderall?](#why-adderall)
+- [About the name](#about-the-name)
+- [Values](#values)
+- [Features](#features)
+- [First launch](#first-launch)
+- [Habits and grids](#habits-and-grids)
+- [Managing habits](#managing-habits)
+- [Marking days](#marking-days)
+- [Measuring progress](#measuring-progress)
+- [Time zones and new days](#time-zones-and-new-days)
+- [Look and feel](#look-and-feel)
+- [Platforms](#platforms)
+- [How it works](#how-it-works)
+- [Saving your data](#saving-your-data)
+- [Building from source](#building-from-source)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Privacy](#privacy)
+- [Accessibility](#accessibility)
+- [Roadmap](#roadmap)
+- [FAQ](#faq)
+- [Contributing](#contributing)
+- [Acknowledgments](#acknowledgments)
+- [Versioning](#versioning)
+- [License](#license)
+
+---
+
+## Why Adderall?
+
+Most habit trackers want an account, a subscription, a notification permission, and a detailed look at your life. You wanted to track whether you drank water.
+
+Adderall brings it back to basics: a line of squares per habit, a click to fill one in, and a program that has never heard of the internet. Habits are easier to keep when tracking them is easy, and easier to be honest about when nobody is watching. A missed day is an empty square, not a failure.
+
+## About the name
+
+Adderall is a joke about how people think taking Adderall will change their life. One little pill and suddenly you're organized, focused, and finally doing everything you've been putting off. This program has the same energy: a grid of squares is not going to change your life either, but it's a start. It's just a joke.
+
+## Values
+
+1. **Private.** Your habits are your business. They never leave your device. Period.
+2. **Simple.** A line of days per habit. That's the whole idea.
+3. **Yours.** You choose how your habits are laid out and displayed, and your data is a plain text file you can open anywhere.
+4. **Lightweight.** Native C, no heavyweight runtime, no bloat.
+
+## Features
+
+- A graphical interface built around one idea: a line of days per habit
+- **Habits stacked as rows,** up to 8, each starting on the day you start tracking it
+- **Two layouts:** horizontal, an endless line growing to the right, or vertical, wrapping down line after line
+- **Click to fill** each day, and **right-click to skip** one without it counting as a miss
+- **Plan ahead:** fill in or skip future days; past days are sealed
+- **No guilt-inducing streak counter:** miss a day and nothing screams at you
+- **Freeform measure tool:** click and drag across any cells to measure them yourself, whenever you feel like it
+- **Archive or delete** habits to keep your board to a handful, all from one habit button in the bottom-left corner
+- **Time zones your way:** pick yours from a small world map and choose when a new day begins
+- **Editable hotkeys,** and a font and text size of your choosing
+- **Scroll or use the arrow keys** to move through your days
+- **Everything in one plain text file,** saved crash-safe
+- Minimalist, black-and-white interface
+- Progress summaries *(planned)*
+- Runs on Windows, macOS, and Linux, on Wayland or X11
+- Lightweight, written in C
+- Fully local: no network features, accounts, or telemetry
+
+## First launch
+
+On first startup, Adderall lets you:
+
+- **create your first habit**, or skip and start with an empty board
+- **choose a layout** for your whole board: horizontal or vertical
+
+The habit's line starts on today, the day you begin tracking it. You can add more habits any time, and each new one stacks under the previous and starts on the day you create it. Your time zone and new-day time default to your computer's settings until you change them.
+
+## Habits and grids
+
+Every habit is a line of cells, and every cell is one day. A habit begins on the day you start tracking it, not before. Habits stack on the board one on top of another, up to **8 habits**, and a newer habit starts on its own first day, whatever the older ones are up to:
+
+```
+Habit 1: 1  2  3  4  ...
+Habit 2: 1  2  3  4  ...
+```
+
+Days always fill **left to right**. You choose how the board behaves when a line runs out of room:
+
+| Layout | Description |
+| --- | --- |
+| Horizontal | The default. Each habit's line keeps expanding to the right forever, like a timeline that never ends. |
+| Vertical | Cells run all the way to the right edge, then start again from the left on the line underneath, over and over, like text wrapping down a page. |
+
+The layout is **board-wide**: it applies to all your habits at once, and you can switch it any time in settings.
+
+A larger **squircle** marks the current day, so you can always find where you are.
+
+**Moving around:** scroll (mouse wheel or trackpad) or use the arrow keys to move through your days. You can go back as far as the first day the habit was created. In the vertical layout you scroll up and down, and in the horizontal layout left and right.
+
+**Telling rows apart:** each row starts with its own **unique cell** showing a symbol that stands for the habit: a star, a triangle, a hexagon, and so on. No two habits on the board share a symbol. Hover over the cell and a tooltip tells you which habit it is.
+
+*(planned: more display options such as cell size and spacing, documented as they're finalized.)*
+
+## Managing habits
+
+In the bottom-left corner of the window there's a **habit button**. Click it and a small area pops up for managing your habits:
+
+- **Create** a new habit. Its line starts on today, even if you create it halfway through the day.
+- **Rename** a habit.
+- **Change its symbol** to any symbol no other habit on the board is using. Each new habit gets the next free one automatically.
+- **Archive**, **restore**, or **delete** a habit.
+- **Archived habits** are listed in their own section of the same pop-up, so you can find them again.
+
+Habit names are a single line of up to **40 characters**, and **no two habits can share a name** (capitals don't count as a difference, so "Read" and "read" are the same name). Leading and trailing spaces are ignored.
+
+The board holds up to 8 habits, so you'll sometimes need to make room:
+
+- **Archive** takes a habit off the board and frees its slot, but keeps all of its history in your data file. Archived habits can be viewed any time, and restored as long as there's a free slot. Their days stay sealed.
+- **Delete** removes a habit and its history for good. Adderall asks you to confirm first, since there's no undo (the backup copy of your data file is the only way back).
+
+If you try to add a ninth habit, Adderall asks you to archive or delete one first. Both only change your data file. They never touch anything else on your device.
+
+## Marking days
+
+- **Click** a cell to fill it in. You fill cells one at a time, by clicking each individual cell. Nothing fills in automatically, and dragging never fills cells.
+- **Click a filled cell** again to clear it, as long as the day isn't sealed.
+- **Right-click** a cell to **skip** that day. A skipped day isn't filled, but it isn't a miss either. Right-click it again to undo the skip.
+- **Future days** can be filled in or skipped ahead of time.
+- **Past days are sealed.** Once a day has happened, its state can't be edited. Today stays editable until it ends.
+
+Sealing keeps the record honest: you can't quietly rewrite last Tuesday. It also means a mis-click yesterday is permanent.
+
+### Cell states
+
+| State | How it looks |
+| --- | --- |
+| Empty | A plain square cell. |
+| Filled | A big dot in the middle of the cell. |
+| Skipped | One diagonal line (`/`) from one corner of the cell to the other. It's not a miss. |
+| Today | The current day sits inside a larger squircle, so it's easy to find. |
+
+Sealed days look like any other cell of their state. They just don't respond to clicks anymore.
+
+## Measuring progress
+
+*(planned)* Adderall will show how you're doing right under each habit, like how many days you've hit.
+
+There is **no guilt-inducing streak counter**. Missing a day doesn't reset anything, break a chain, or make a little flame go out. The grid just has an empty square in it, and tomorrow is another square.
+
+If you like streaks, there's a **freeform measure tool**. Click and drag across a run of cells in any habit and Adderall measures what you grabbed:
+
+- how many cells you grabbed
+- how many days are filled, skipped, and empty
+- the streaks inside the grabbed area, including the longest
+- the share of the grabbed days you filled
+
+For example, grab 14 days and it might tell you: 14 cells, 10 filled, 2 skipped, 2 empty, longest streak 6, 71% filled.
+
+You pick the cells, so you decide what counts as a streak: this month, the last week, or just the stretch you felt good about. The results appear in a **large tooltip near your cursor** while you drag, and go away when you let go. The measure tool needs a mouse.
+
+## Time zones and new days
+
+In settings, a small pop-out shows a **map of the world with its time zones separated**. Click your zone to choose it. Then pick **when a new day begins** in that zone, so a day can roll over at midnight, or at 4am if you're a night owl.
+
+1. **Rollover:** at your new-day time, today becomes yesterday, yesterday is sealed, and a new cell becomes today.
+2. **Daylight saving** is handled for you, using your time zone's rules.
+3. **Changing your time zone** only affects days from now on. Days that are already sealed stay sealed.
+4. **Defaults:** your computer's time zone, with the day starting at midnight.
+5. **Built in:** the world map and a time zone database come with Adderall, so it works the same on every system, including Windows, and never needs the internet.
+
+## Look and feel
+
+The whole interface is **minimalist, clean, and black and white**. No gradients, no accent colors, no decoration: just your habits.
+
+- Use it as black on white or white on black.
+- With no color to lean on, every cell state has its own distinct mark: a big dot for filled, a diagonal line for skipped, and a plain square for empty.
+- A larger squircle marks the current day, since it's the one you'll click most.
+- Each habit has its own symbol (star, triangle, hexagon, and more), drawn in black and white like everything else.
+- A settings button and a habit button sit in the corners, and nothing else crowds the board.
+- Nothing blinks, bounces, or celebrates, and animation can be turned off.
+
+## Platforms
+
+Adderall is available on **Windows**, **Linux**, and **macOS**. On Linux it runs on **Wayland** or **X11**; it isn't tied to any particular display server, compositor, or windowing system.
+
+Adderall ships as a **separate, dedicated build for each operating system**, rather than a single universal package.
+
+## How it works
+
+Adderall is a small graphical layer over one plain text file:
+
+- **Interface** is built with [SDL3](https://libsdl.org), the same as [THC](https://github.com/Doggydoggywhatnow/THC), and runs the same way on Windows, macOS, and Linux (Wayland and X11).
+- **Text** is drawn with a bundled, openly licensed font by default, and you can switch to any font file you like.
+- **Days** are calendar dates. Today comes from your computer's clock, your chosen time zone, and your new-day time.
+- **Habit data** (habits, marked days, and settings) is stored in a single `.txt` file in your OS's standard data directory.
+- **No network:** Adderall never talks to the internet. Nothing is sent anywhere.
+
+## Saving your data
+
+Everything lives in **one plain text file**, so you can read it, copy it, and back it up.
+
+### Where it lives
+
+The standard data folder for your operating system *(planned: exact paths may change)*:
+
+| OS | Folder |
+| --- | --- |
+| Linux | `~/.local/share/adderall/` (or `$XDG_DATA_HOME/adderall/`) |
+| macOS | `~/Library/Application Support/Adderall/` |
+| Windows | `%APPDATA%\Adderall\` |
+
+In settings you can **copy the path** or **open the folder** in one click.
+
+### The file format
+
+Simple, line-based, and readable in any text editor. It starts with a version line. An example, which may change before 1.0:
+
+```
+adderall 1
+timezone America/New_York
+daystart 04:00
+layout horizontal
+font default
+textsize 16
+key today t
+
+habit Drink water
+symbol star
+start 2026-11-11
+x 2026-11-11
+x 2026-11-12
+s 2026-11-13
+
+habit Read
+symbol triangle
+start 2026-11-12
+archived
+x 2026-11-12
+```
+
+- The lines before the first `habit` are settings: your time zone, day start, layout, font and text size, and any hotkeys you've remapped.
+- `habit` starts a new habit. Habits appear on the board in the order they're listed.
+- `symbol` is the habit's unique symbol, such as `star`, `triangle`, or `hexagon`.
+- `start` is the habit's first day, and dates are written `YYYY-MM-DD`.
+- `x` is a filled day and `s` is a skipped day. Days that aren't listed are empty.
+- `archived` marks a habit that's off the board.
+
+If Adderall can't make sense of a line, it tells you which one and leaves the file alone. It never silently throws your data away. It rewrites the file in its own format when it saves, so don't keep notes in it.
+
+### One window at a time
+
+Adderall locks its data file while it's open. If you launch it a second time, it tells you it's already running instead of opening a second copy that could overwrite the first one's changes. The lock is held by your operating system, so it's released automatically if Adderall quits or crashes, and it never gets stuck.
+
+### Crash-safe saving
+
+Adderall saves as you go, so a crash or power cut can't leave you with half a file:
+
+1. **Write:** changes go to a temporary file next to your data file.
+2. **Flush:** the temporary file is flushed to disk.
+3. **Swap:** it replaces the real file in one step.
+4. **Back up:** the previous version is kept as a backup copy beside it.
+
+If your main file is ever damaged, Adderall tells you and falls back to the backup instead of starting empty.
+
+## Building from source
+
+*(planned: build instructions will be added as the project takes shape.)*
+
+Expected requirements:
+
+- A C compiler (GCC, Clang, or MSVC)
+- CMake
+- SDL3
+
+```bash
+git clone <repository-url> Adderall
+cd Adderall
+# build steps coming soon
+```
+
+## Usage
+
+*(planned)*
+
+```bash
+adderall
+```
+
+Launch Adderall, create a habit, pick a layout, and start clicking squares.
+
+| Action | How |
+| --- | --- |
+| Fill in a day | Click its cell |
+| Skip a day | Right-click its cell |
+| Measure cells | Click and drag across them |
+| Manage habits | The habit button, bottom-left |
+| Open settings | The settings button |
+| Look at older days | Scroll, or use the arrow keys |
+| See which habit a row is | Hover over the cell at the start of the row |
+
+A typical day: open Adderall, click today's cell on each habit you did, right-click the ones you're skipping, and close it. Your file is already saved. Curious about last week? Drag across those cells and the measure tool tells you what you grabbed.
+
+## Configuration
+
+Adderall lets you change things to suit you. Planned settings include:
+
+### Habits
+- Horizontal or vertical layout, for the whole board
+- How each grid is displayed
+- Create, rename, archive, restore, and delete habits (from the habit button)
+
+### Time
+- Your time zone, chosen from a world map
+- When a new day begins
+
+### Data
+- Copy the data file's path, or open its folder
+
+### Hotkeys
+- **Editable hotkeys:** every keyboard shortcut can be remapped
+
+Planned defaults, all editable:
+
+| Action | Default key |
+| --- | --- |
+| Move between cells | Arrow keys |
+| Jump to today | `T` |
+| Fill the selected cell | `Enter` or `Space` |
+| Skip the selected cell | `S` |
+| Open the habit pop-up | `H` |
+| Open settings | `Ctrl+,` (`Cmd+,` on macOS) |
+| Switch between horizontal and vertical | `L` |
+
+### Appearance
+- **Font:** a clean, minimalist sans-serif by default. Choose any font file (`.ttf` or `.otf`) you like instead
+- **Text size**
+- Cell size and spacing
+- Black on white, or white on black
+- **Reduced motion:** turn off animation
+
+### Accessibility
+- **High-contrast mode**
+- **Large text and interface scaling,** with a font and text size of your choosing
+- **Full keyboard navigation,** except the measure tool, which needs a mouse
+
+Full option documentation will be added as settings are finalized.
+
+## Privacy
+
+Privacy is a core value, not a feature toggle.
+
+- All data stays on your device.
+- Your habits, marked days, and settings are stored in a single plain `.txt` file.
+- Adderall makes no network requests: no update checks, no crash reports, no telemetry, no accounts.
+- Adderall only reads and writes its own data folder. It doesn't scan or look at anything else on your device.
+- You can open, back up, or delete that file at any time.
+
+What you do with your habits is your business. Period.
+
+## Accessibility
+
+*(planned)* Adderall aims to be usable by everyone: keyboard navigation for the whole interface (except the measure tool, which needs a mouse), large text and scaling, a high-contrast mode on top of the black-and-white design, cell states that never rely on color alone, and reduced motion. If something gets in your way, please [open an issue](../../issues). Accessibility problems are treated as bugs.
+
+## Roadmap
+
+- [ ] Habits stacked as rows of cells, up to 8
+- [ ] Horizontal (endless) and vertical (wrapping) layouts
+- [ ] Click to fill, right-click to skip, past days sealed
+- [ ] Habit button: create, rename, archive, restore, and delete habits
+- [ ] A unique symbol for each habit, with hover tooltips
+- [ ] Single `.txt` data file, crash-safe, with a backup
+- [ ] Time zone map and custom new-day time, with a bundled time zone database
+- [ ] Freeform measure tool
+- [ ] Black-and-white interface, light and dark
+- [ ] Settings button, with editable hotkeys
+- [ ] Font and text size settings
+- [ ] Scrolling and arrow-key navigation
+- [ ] Lock so only one window edits the data file
+- [ ] Copy the data path and open its folder from settings
+- [ ] Keyboard navigation and accessibility options
+- [ ] Progress summaries (no streak guilt)
+- [ ] Windows, Linux (Wayland and X11), and macOS builds
+
+## FAQ
+
+### Why not just use a notes app or a spreadsheet?
+
+You can! But a line of days per habit is a very specific thing, and Adderall is built to do exactly that and nothing else: a click to fill a day, past days that stay put, and your progress a glance away. No formulas, no setup, no account.
+
+### Why can't I edit past days?
+
+On purpose. Sealed days keep the record honest, and they keep you from spending your evenings tidying up last week. Fill today in today.
+
+### Can I have two habits with the same name?
+
+No. Every habit needs its own name, so you can always tell them apart. Names are unique regardless of capitals.
+
+### Why only 8 habits?
+
+A short list is easier to keep. If you want to track something new, archive a habit you've finished with and its history stays in your file.
+
+### Why is there no streak counter?
+
+Because a number that resets to zero after one bad day does more harm than good. If you want to know your streak, grab the cells with the measure tool. It's there when you want it and silent when you don't.
+
+### Why no reminders, accounts, or syncing?
+
+Adderall is deliberately small and private: no notifications, no accounts, no cloud, no social features. The data is one plain file, so you can copy it between computers yourself or keep it in a folder you already sync.
+
+### Does Adderall need an internet connection?
+
+No. It never makes network requests, so it works the same offline as anywhere else.
+
+### What if I change time zones or travel?
+
+Choose your new time zone in settings. Days that are already sealed stay as they are, and new days follow your new zone.
+
+### Will this change my life?
+
+No. Neither will the pill the name is making fun of. But a row of filled squares is a nice thing to look at, and it beats doing nothing.
+
+## Contributing
+
+Contributions are welcome once the project is public. Ideas, bug reports, and pull requests that fit Adderall's four values are especially appreciated. Contribution guidelines will be added here.
+
+## Acknowledgments
+
+- [SDL](https://libsdl.org) for making one codebase work on every desktop
+- The Wayland and X11 communities, for making native software possible on both
+- Everyone who has ever tried to build a habit and just wanted a simple way to keep track
+
+## Versioning
+
+Adderall uses `x.y.z` version numbers:
+
+- **`x.0.0` (major):** major releases
+- **`0.x.0` (minor):** big new features
+- **`0.0.x` (patch):** small new features, bug fixes, and security updates
+
+The first release, `0.1.0`, is a demo that shows off everything in this README.
+
+## License
+
+Adderall's own source code is released under [the Unlicense](https://unlicense.org), which dedicates it to the public domain. See [LICENSE](LICENSE).
