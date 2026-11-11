@@ -124,6 +124,41 @@ ad_result ad_model_toggle_skip(ad_model *m, int habit, ad_day day);
  * (and so the file should be saved). */
 bool ad_model_set_clock(ad_model *m, ad_day clock_day);
 
+/* ---- managing habits ------------------------------------------------------ */
+
+typedef enum {
+  AD_HABIT_OK = 0,
+  AD_HABIT_BAD_NAME,   /* see the ad_name_result */
+  AD_HABIT_NAME_TAKEN, /* another habit (even an archived one) has this name */
+  AD_HABIT_BOARD_FULL, /* eight habits are on the board: archive or delete one first */
+  AD_HABIT_TOO_MANY,
+  AD_HABIT_NOT_FOUND,
+  AD_HABIT_SYMBOL_TAKEN,
+  AD_HABIT_ALREADY,    /* already archived / already on the board */
+} ad_habit_result;
+
+const char *ad_habit_result_message(ad_habit_result r, ad_name_result nr);
+
+int ad_model_board_count(const ad_model *m);
+/* The habit index of the n-th habit on the board (n counted from 0), or -1. */
+int ad_model_board_habit(const ad_model *m, int n);
+/* The lowest-numbered symbol no board habit uses. */
+ad_symbol ad_model_next_symbol(const ad_model *m);
+
+/* Create a habit: it starts today, even halfway through the day, and gets the
+ * next free symbol. `*nr` (optional) tells why a name was refused. */
+ad_habit_result ad_model_create(ad_model *m, const char *name, int *index_out, ad_name_result *nr);
+ad_habit_result ad_model_rename(ad_model *m, int habit, const char *name, ad_name_result *nr);
+/* Symbols are unique among the habits on the board. */
+ad_habit_result ad_model_set_symbol(ad_model *m, int habit, ad_symbol sym);
+/* Archive takes a habit off the board and keeps its history. */
+ad_habit_result ad_model_archive(ad_model *m, int habit);
+/* Restore needs a free slot; the habit goes to the end of the board. If its
+ * symbol was taken meanwhile it gets the next free one. *new_index is where it ended up. */
+ad_habit_result ad_model_restore(ad_model *m, int habit, int *new_index);
+/* Delete removes a habit and all its days for good. */
+ad_habit_result ad_model_delete(ad_model *m, int habit);
+
 /* Add a habit at the end. Returns its index, or -1 if out of memory. */
 int ad_model_add_raw(ad_model *m, const char *name, ad_symbol sym, ad_day start);
 

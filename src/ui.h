@@ -41,6 +41,10 @@ typedef struct {
   /* text field editing */
   int cursor;         /* byte offset in the focused field */
   bool consumed_click; /* a widget already took this frame's click */
+  bool use_clip;       /* widgets only react inside `clip` (scrolling panels) */
+  ad_rect clip;
+  bool want_visible;   /* the focused widget asks to be scrolled into view */
+  float want_y0, want_y1;
 } ui_state;
 
 typedef enum { UI_BTN_NORMAL = 0, UI_BTN_PRIMARY = 1, UI_BTN_DISABLED = 2, UI_BTN_SELECTED = 4 } ui_btn_flags;

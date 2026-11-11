@@ -6,6 +6,8 @@
 void ui_begin_frame(ui_state *u) {
   u->n_cur = 0;
   u->want_text = false;
+  u->want_visible = false;
+  u->use_clip = false;
   u->consumed_click = false;
   u->line = fmaxf(1.0f, roundf(u->g->scale * (u->g->high_contrast ? 2.0f : 1.0f)));
 
@@ -62,7 +64,18 @@ bool ui_focusable(ui_state *u, int id) {
   return u->focus == id;
 }
 
-bool ui_hover(const ui_state *u, ad_rect r) { return u->mouse_in && ad_rect_has(r, u->mx, u->my); }
+bool ui_hover(const ui_state *u, ad_rect r) {
+  if (!u->mouse_in || !ad_rect_has(r, u->mx, u->my)) return false;
+  return !u->use_clip || ad_rect_has(u->clip, u->mx, u->my);
+}
+
+static void note_focus(ui_state *u, ad_rect r) {
+  if (u->use_clip && u->focus_visible) {
+    u->want_visible = true;
+    u->want_y0 = r.y;
+    u->want_y1 = r.y + r.h;
+  }
+}
 
 float ui_button_width(ui_state *u, const char *label) { return gfx_text_width(u->g, label) + 28 * u->g->scale; }
 
@@ -110,7 +123,10 @@ bool ui_button(ui_state *u, int id, ad_rect r, const char *label, int flags) {
   const float tw = gfx_text_width(g, label);
   if (tw > r.w - 8 * g->scale) gfx_text_fit(g, label, r.x + 4 * g->scale, r.y + (r.h - gfx_text_height(g)) * 0.5f, r.w - 8 * g->scale, tc);
   else gfx_text_center(g, label, r.x, r.y, r.w, r.h, tc);
-  if (focused && u->focus_visible) focus_ring(u, r);
+  if (focused && u->focus_visible) {
+    focus_ring(u, r);
+    note_focus(u, r);
+  }
   return clicked;
 }
 
@@ -134,7 +150,10 @@ bool ui_icon_button(ui_state *u, int id, ad_rect r, gfx_mask_kind kind, int para
   gfx_stroke_rect(g, g->theme.fg, r.x, r.y, r.w, r.h, u->line);
   const float s = roundf(fminf(r.w, r.h) * 0.62f);
   gfx_mask(g, kind, param, 0, r.x + (r.w - s) * 0.5f, r.y + (r.h - s) * 0.5f, s, solid ? g->theme.bg : g->theme.fg);
-  if (focused && u->focus_visible) focus_ring(u, r);
+  if (focused && u->focus_visible) {
+    focus_ring(u, r);
+    note_focus(u, r);
+  }
   return clicked;
 }
 

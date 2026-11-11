@@ -253,3 +253,115 @@ bool ad_model_set_clock(ad_model *m, ad_day clock_day) {
   }
   return changed;
 }
+
+/* ---- managing habits ------------------------------------------------------ */
+
+const char *ad_habit_result_message(ad_habit_result r, ad_name_result nr) {
+  switch (r) {
+    case AD_HABIT_OK: return "";
+    case AD_HABIT_BAD_NAME: return ad_name_message(nr);
+    case AD_HABIT_NAME_TAKEN: return "Another habit already has that name.";
+    case AD_HABIT_BOARD_FULL: return "The board holds 8 habits. Archive or delete one first.";
+    case AD_HABIT_TOO_MANY: return "That is more habits than Adderall can keep.";
+    case AD_HABIT_NOT_FOUND: return "There is no such habit.";
+    case AD_HABIT_SYMBOL_TAKEN: return "Another habit on the board already uses that symbol.";
+    case AD_HABIT_ALREADY: return "That habit is already like that.";
+  }
+  return "";
+}
+
+int ad_model_board_count(const ad_model *m) {
+  int n = 0;
+  for (int i = 0; i < m->n_habits; i++)
+    if (!m->habits[i].archived) n++;
+  return n;
+}
+
+int ad_model_board_habit(const ad_model *m, int n) {
+  for (int i = 0; i < m->n_habits; i++) {
+    if (m->habits[i].archived) continue;
+    if (n-- == 0) return i;
+  }
+  return -1;
+}
+
+static bool symbol_used_on_board(const ad_model *m, ad_symbol s, int except) {
+  for (int i = 0; i < m->n_habits; i++)
+    if (i != except && !m->habits[i].archived && m->habits[i].symbol == s) return true;
+  return false;
+}
+
+ad_symbol ad_model_next_symbol(const ad_model *m) {
+  for (int s = 0; s < AD_SYM_COUNT; s++)
+    if (!symbol_used_on_board(m, (ad_symbol)s, -1)) return (ad_symbol)s;
+  return AD_SYM_STAR;
+}
+
+static bool name_taken(const ad_model *m, const char *name, int except) {
+  for (int i = 0; i < m->n_habits; i++)
+    if (i != except && ad_name_equal(m->habits[i].name, name)) return true;
+  return false;
+}
+
+ad_habit_result ad_model_create(ad_model *m, const char *name, int *index_out, ad_name_result *nr) {
+  char clean[AD_NAME_MAX_BYTES + 1];
+  const ad_name_result r = ad_name_normalize(name, clean);
+  if (nr) *nr = r;
+  if (r != AD_NAME_OK) return AD_HABIT_BAD_NAME;
+  if (name_taken(m, clean, -1)) return AD_HABIT_NAME_TAKEN;
+  if (ad_model_board_count(m) >= AD_MAX_BOARD) return AD_HABIT_BOARD_FULL;
+  if (m->n_habits >= AD_MAX_HABITS) return AD_HABIT_TOO_MANY;
+  const int i = ad_model_add_raw(m, clean, ad_model_next_symbol(m), m->today);
+  if (i < 0) return AD_HABIT_TOO_MANY;
+  if (index_out) *index_out = i;
+  return AD_HABIT_OK;
+}
+
+ad_habit_result ad_model_rename(ad_model *m, int habit, const char *name, ad_name_result *nr) {
+  if (habit < 0 || habit >= m->n_habits) return AD_HABIT_NOT_FOUND;
+  char clean[AD_NAME_MAX_BYTES + 1];
+  const ad_name_result r = ad_name_normalize(name, clean);
+  if (nr) *nr = r;
+  if (r != AD_NAME_OK) return AD_HABIT_BAD_NAME;
+  if (name_taken(m, clean, habit)) return AD_HABIT_NAME_TAKEN;
+  strcpy(m->habits[habit].name, clean);
+  return AD_HABIT_OK;
+}
+
+ad_habit_result ad_model_set_symbol(ad_model *m, int habit, ad_symbol sym) {
+  if (habit < 0 || habit >= m->n_habits) return AD_HABIT_NOT_FOUND;
+  if ((int)sym < 0 || sym >= AD_SYM_COUNT) return AD_HABIT_NOT_FOUND;
+  ad_habit *h = &m->habits[habit];
+  if (!h->archived && symbol_used_on_board(m, sym, habit)) return AD_HABIT_SYMBOL_TAKEN;
+  h->symbol = sym;
+  return AD_HABIT_OK;
+}
+
+ad_habit_result ad_model_archive(ad_model *m, int habit) {
+  if (habit < 0 || habit >= m->n_habits) return AD_HABIT_NOT_FOUND;
+  if (m->habits[habit].archived) return AD_HABIT_ALREADY;
+  m->habits[habit].archived = true;
+  return AD_HABIT_OK;
+}
+
+ad_habit_result ad_model_restore(ad_model *m, int habit, int *new_index) {
+  if (habit < 0 || habit >= m->n_habits) return AD_HABIT_NOT_FOUND;
+  if (!m->habits[habit].archived) return AD_HABIT_ALREADY;
+  if (ad_model_board_count(m) >= AD_MAX_BOARD) return AD_HABIT_BOARD_FULL;
+  ad_habit h = m->habits[habit];
+  memmove(&m->habits[habit], &m->habits[habit + 1], (size_t)(m->n_habits - habit - 1) * sizeof(ad_habit));
+  m->habits[m->n_habits - 1] = h;
+  ad_habit *r = &m->habits[m->n_habits - 1];
+  r->archived = false;
+  if (symbol_used_on_board(m, r->symbol, m->n_habits - 1)) r->symbol = ad_model_next_symbol(m);
+  if (new_index) *new_index = m->n_habits - 1;
+  return AD_HABIT_OK;
+}
+
+ad_habit_result ad_model_delete(ad_model *m, int habit) {
+  if (habit < 0 || habit >= m->n_habits) return AD_HABIT_NOT_FOUND;
+  free(m->habits[habit].marks);
+  memmove(&m->habits[habit], &m->habits[habit + 1], (size_t)(m->n_habits - habit - 1) * sizeof(ad_habit));
+  m->n_habits--;
+  return AD_HABIT_OK;
+}
