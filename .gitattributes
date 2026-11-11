@@ -1,0 +1,4 @@
+# Bundled data must reach every platform byte for byte.
+data/zoneinfo/** -text
+data/fonts/*.otf binary
+data/fonts/*.ttf binary

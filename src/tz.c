@@ -393,6 +393,10 @@ int ad_zones_load(const char *dir, ad_zone_info **out) {
   while (z && line && *line) {
     char *nl = strchr(line, '\n');
     if (nl) *nl = 0;
+    {
+      size_t ll = strlen(line);
+      if (ll && line[ll - 1] == '\r') line[ll - 1] = 0; /* checked out with Windows line endings */
+    }
     if (line[0] != '#' && line[0]) {
       char *f[3] = {line, NULL, NULL};
       char *p = line;
