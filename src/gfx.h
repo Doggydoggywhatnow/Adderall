@@ -56,6 +56,7 @@ typedef struct {
   float ui_scale;       /* the user's interface scale, 1.0 = 100% */
   float scale;          /* density * ui_scale */
   int text_size;        /* the user's text size, in points at 100% */
+  float text_factor;    /* temporary enlargement (the measure tooltip), 1.0 normally */
   bool dark, high_contrast;
   gfx_theme theme;
   gfx_mask_entry masks[GFX_MASK_CACHE];
@@ -80,6 +81,9 @@ void gfx_set_theme(gfx *g, bool dark, bool high_contrast);
 bool gfx_set_font(gfx *g, const char *bundled_path, const char *user_path, int text_size);
 
 void gfx_clear_caches(gfx *g);
+
+/* Draw text bigger (or back at 1.0) until changed again. */
+void gfx_text_scale(gfx *g, float factor);
 
 void gfx_begin_frame(gfx *g);
 void gfx_end_frame(gfx *g);

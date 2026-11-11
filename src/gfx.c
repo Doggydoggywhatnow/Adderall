@@ -43,6 +43,7 @@ bool gfx_init(gfx *g, SDL_Window *win, SDL_Renderer *ren) {
   g->ren = ren;
   g->ui_scale = 1.0f;
   g->text_size = 16;
+  g->text_factor = 1.0f;
   gfx_set_theme(g, false, false);
   gfx_refresh_scale(g);
   SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
@@ -67,7 +68,7 @@ void gfx_shutdown(gfx *g) {
 
 static void apply_font_size(gfx *g) {
   if (!g->font) return;
-  int px = (int)lroundf(g->text_size * g->scale);
+  int px = (int)lroundf(g->text_size * g->scale * (g->text_factor > 0 ? g->text_factor : 1.0f));
   if (px < 6) px = 6;
   if (px != g->font_px) {
     TTF_SetFontSize(g->font, (float)px);
@@ -123,6 +124,11 @@ bool gfx_set_font(gfx *g, const char *bundled_path, const char *user_path, int t
   TTF_SetFontHinting(f, TTF_HINTING_LIGHT);
   gfx_clear_caches(g);
   return ok || g->font_error[0];
+}
+
+void gfx_text_scale(gfx *g, float factor) {
+  g->text_factor = factor;
+  apply_font_size(g);
 }
 
 void gfx_begin_frame(gfx *g) {

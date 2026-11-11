@@ -165,6 +165,13 @@ If you like streaks, there's a **freeform measure tool**. Click and drag across 
 - the streaks inside the grabbed area, including the longest
 - the share of the grabbed days you filled
 
+A few details, so the numbers never surprise you:
+
+- You grab cells of **one habit**, from the cell you pressed on to the cell you let go on, in either direction. Cells before the habit's first day aren't counted.
+- A **streak** is a run of filled days. A skipped day isn't a miss, so it neither counts toward a streak nor breaks one. An empty day ends it.
+- The share is **filled days out of the days that have happened**. Days still ahead of you are listed as "ahead" and are never counted as misses.
+- Clicking fills or skips a cell when you *let go* on the same cell you pressed. If you drag to another cell, it's a measurement, and nothing is changed.
+
 For example, grab 14 days and it might tell you: 14 cells, 10 filled, 2 skipped, 2 empty, longest streak 6, 71% filled.
 
 You pick the cells, so you decide what counts as a streak: this month, the last week, or just the stretch you felt good about. The results appear in a **large tooltip near your cursor** while you drag, and go away when you let go. The measure tool needs a mouse.

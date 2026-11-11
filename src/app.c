@@ -9,6 +9,7 @@
 #include "board.h"
 #include "date.h"
 #include "gfx.h"
+#include "measure.h"
 #include "model.h"
 #include "store.h"
 #include "tz.h"
@@ -57,6 +58,13 @@ typedef struct {
   int focus_row;        /* board row */
   ad_day focus_day;
   bool kb_visible;      /* draw the focus ring (the keyboard is in use) */
+
+  /* the measure tool: a press on a cell starts a drag; a drag across cells measures, a plain click fills or skips */
+  bool drag_active;
+  int drag_button;
+  int drag_row;         /* board row of the habit being measured */
+  ad_day drag_a, drag_b;
+  bool dragged;
 
   /* the habit pop-up */
   bool popup_open;
@@ -259,6 +267,49 @@ static void click_cell(App *a, int habit, ad_day day, bool left) {
   if (r == AD_OK) commit(a);
 }
 
+/* ---- the measure tool's tooltip --------------------------------------------- */
+
+static void draw_measure_tooltip(App *a, const ad_measure m) {
+  gfx *g = &a->g;
+  ui_state *u = &a->ui;
+  char lines[4][96];
+  int n = 0;
+  SDL_snprintf(lines[n++], sizeof lines[0], "%d %s", m.cells, m.cells == 1 ? "cell" : "cells");
+  char counts[96];
+  SDL_snprintf(counts, sizeof counts, "%d filled, %d skipped, %d empty", m.filled, m.skipped, m.empty);
+  if (m.ahead) SDL_snprintf(counts + strlen(counts), sizeof counts - strlen(counts), ", %d ahead", m.ahead);
+  SDL_strlcpy(lines[n++], counts, sizeof lines[0]);
+  if (m.longest > 0) {
+    if (m.streaks > 1) SDL_snprintf(lines[n++], sizeof lines[0], "Longest streak: %d (%d streaks)", m.longest, m.streaks);
+    else SDL_snprintf(lines[n++], sizeof lines[0], "Longest streak: %d", m.longest);
+  } else {
+    SDL_strlcpy(lines[n++], "No streak in here", sizeof lines[0]);
+  }
+  if (m.percent >= 0) SDL_snprintf(lines[n++], sizeof lines[0], "%d%% filled", m.percent);
+  else SDL_strlcpy(lines[n++], "Nothing here has happened yet", sizeof lines[0]);
+
+  gfx_text_scale(g, 1.3f);
+  const float pad = 12 * g->scale, lh = gfx_text_height(g);
+  float w = 0;
+  for (int i = 0; i < n; i++) {
+    const float tw = gfx_text_width(g, lines[i]);
+    if (tw > w) w = tw;
+  }
+  const float bw = w + 2 * pad, bh = lh * n + 2 * pad;
+  int W, H;
+  SDL_GetWindowSizeInPixels(a->win, &W, &H);
+  /* up and to the right of the pointer, so the cells being measured stay visible */
+  float x = u->mx + 18 * g->scale, y = u->my - bh - 14 * g->scale;
+  if (x + bw > W - 4) x = u->mx - bw - 18 * g->scale;
+  if (x < 4) x = 4;
+  if (y < 4) y = u->my + 22 * g->scale;
+  if (y + bh > H - 4) y = H - bh - 4;
+  gfx_fill_rect(g, g->theme.bg, x, y, bw, bh);
+  gfx_stroke_rect(g, g->theme.fg, x, y, bw, bh, fmaxf(1.0f, u->line * 1.5f));
+  for (int i = 0; i < n; i++) gfx_text(g, lines[i], x + pad, y + pad + i * lh, i == 0 ? g->theme.fg : (i == n - 1 ? g->theme.fg : g->theme.dim));
+  gfx_text_scale(g, 1.0f);
+}
+
 static void board_frame(App *a) {
   gfx *g = &a->g;
   ui_state *u = &a->ui;
@@ -292,14 +343,42 @@ static void board_frame(App *a) {
   if (hover_cell && hover_day < m->habits[bh[hover_row]].start) hover_cell = false;
   if (ad_rect_has(a->banner_rect, u->mx, u->my)) hover_cell = false;
 
-  if (hover_cell && !u->consumed_click && (u->lpress || u->rpress)) {
+  /* A press on a cell starts a gesture. Letting go on the same cell is a
+   * click (fill or skip). Dragging to other cells is the measure tool, and
+   * never changes a cell. */
+  if (hover_cell && !u->consumed_click && (u->lpress || u->rpress) && !a->drag_active) {
     a->cell_focus = true;
     a->focus_row = hover_row;
     a->focus_day = hover_day;
     a->kb_visible = false;
     u->focus = 0;
-    click_cell(a, bh[hover_row], hover_day, u->lpress);
+    a->drag_active = true;
+    a->drag_button = u->lpress ? SDL_BUTTON_LEFT : SDL_BUTTON_RIGHT;
+    a->drag_row = hover_row;
+    a->drag_a = a->drag_b = hover_day;
+    a->dragged = false;
   }
+  if (a->drag_active) {
+    int hr;
+    ad_day hd;
+    if (!live || a->drag_row >= nb) {
+      a->drag_active = false;
+    } else {
+      if (u->mouse_in && ad_view_hit_cell(v, u->mx, u->my, &hr, &hd)) {
+        const ad_day st = m->habits[bh[a->drag_row]].start;
+        a->drag_b = hd < st ? st : hd;
+        if (a->drag_b != a->drag_a) a->dragged = true;
+      }
+      const bool released = a->drag_button == SDL_BUTTON_LEFT ? u->lrelease : u->rrelease;
+      if (released) {
+        if (!a->dragged) click_cell(a, bh[a->drag_row], a->drag_a, a->drag_button == SDL_BUTTON_LEFT);
+        a->drag_active = false;
+      }
+    }
+  }
+  const bool measuring = a->drag_active && a->dragged;
+  const ad_day sel_lo = a->drag_a < a->drag_b ? a->drag_a : a->drag_b;
+  const ad_day sel_hi = a->drag_a < a->drag_b ? a->drag_b : a->drag_a;
   if (a->cell_focus && a->focus_row >= nb) a->cell_focus = false;
 
   /* Cells and headers are clipped so they slide under the symbol column. */
@@ -330,6 +409,8 @@ static void board_frame(App *a) {
       ad_rect rc;
       ad_view_cell_rect(v, r, d, &rc);
       if (rc.y + rc.h < v->y || rc.y > v->y + v->h) continue;
+      if (measuring && r == a->drag_row && d >= sel_lo && d <= sel_hi)
+        gfx_fill_rect(g, gfx_alpha(g->theme.fg, g->high_contrast ? 70 : 38), rc.x + 1, rc.y + 1, rc.w - 2, rc.h - 2);
       draw_cell(a, rc, ad_habit_get(h, d), d == m->today, hover_cell && r == hover_row && d == hover_day,
                 a->cell_focus && a->kb_visible && u->focus == 0 && r == a->focus_row && d == a->focus_day);
     }
@@ -351,9 +432,11 @@ static void board_frame(App *a) {
 
   /* tooltips */
   int lrow;
-  if (live && u->mouse_in && ad_view_hit_label(v, u->mx, u->my, &lrow)) {
+  if (measuring) {
+    draw_measure_tooltip(a, ad_measure_range(&m->habits[bh[a->drag_row]], sel_lo, sel_hi, m->today));
+  } else if (live && u->mouse_in && ad_view_hit_label(v, u->mx, u->my, &lrow)) {
     ui_tooltip(u, m->habits[bh[lrow]].name, NULL, u->mx, u->my);
-  } else if (hover_cell) {
+  } else if (hover_cell && !a->drag_active) {
     char buf[64];
     format_long_date(hover_day, buf, sizeof buf);
     ui_tooltip(u, buf, hover_day == m->today ? "Today" : NULL, u->mx, u->my);
@@ -1058,12 +1141,16 @@ static void handle_event(App *a, const SDL_Event *e) {
       u->my = e->button.y * d;
       u->mouse_in = true;
       if (e->button.button == SDL_BUTTON_LEFT) u->lpress = u->ldown = true;
-      if (e->button.button == SDL_BUTTON_RIGHT) u->rpress = true;
+      if (e->button.button == SDL_BUTTON_RIGHT) u->rpress = u->rdown = true;
       break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
       if (e->button.button == SDL_BUTTON_LEFT) {
         u->lrelease = true;
         u->ldown = false;
+      }
+      if (e->button.button == SDL_BUTTON_RIGHT) {
+        u->rrelease = true;
+        u->rdown = false;
       }
       break;
     case SDL_EVENT_MOUSE_WHEEL: {

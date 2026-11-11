@@ -36,7 +36,7 @@ void ui_end_frame(ui_state *u) {
   u->n_prev = u->n_cur;
   u->nkeys = 0;
   u->text[0] = 0;
-  u->lpress = u->rpress = u->lrelease = false;
+  u->lpress = u->rpress = u->lrelease = u->rrelease = false;
   u->wheel_x = u->wheel_y = 0;
   u->mouse_moved = false;
 }

@@ -23,7 +23,7 @@ typedef struct {
   /* input gathered for this frame; cleared by ui_end_frame */
   float mx, my;
   bool mouse_in;
-  bool lpress, rpress, lrelease, ldown;
+  bool lpress, rpress, lrelease, rrelease, ldown, rdown;
   float wheel_x, wheel_y;
   ui_key keys[UI_MAX_KEYS];
   int nkeys;

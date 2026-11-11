@@ -25,6 +25,7 @@ add_library(adderall_core STATIC
   src/board.c
   src/model.c
   src/hotkeys.c
+  src/measure.c
   src/format.c
   src/platform.c
   src/tz.c
