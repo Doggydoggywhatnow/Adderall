@@ -1,0 +1,60 @@
+name: AppImage
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  appimage:
+    # An older Ubuntu, so the AppImage runs on older distributions too.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config libfuse2 \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libxfixes-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev \
+            wayland-protocols libdecor-0-dev libegl-dev libgl-dev libdrm-dev \
+            libgbm-dev libasound2-dev libpulse-dev libudev-dev
+
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DADDERALL_BUILD_TESTS=OFF
+          cmake --build build
+
+      - name: Assemble the AppDir
+        run: |
+          A=AppDir
+          mkdir -p $A/usr/bin
+          cp build/adderall $A/usr/bin/
+          cp -r data $A/usr/bin/data
+          cp packaging/appimage/AppRun $A/AppRun
+          cp packaging/appimage/adderall.desktop packaging/appimage/adderall.svg $A/
+          strip $A/usr/bin/adderall
+
+      - name: Build the AppImage
+        run: |
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir Adderall-x86_64.AppImage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Adderall-x86_64.AppImage
+          path: Adderall-x86_64.AppImage
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "Adderall $GITHUB_REF_NAME" --notes "Linux AppImage: make it executable and run it."
+          gh release upload "$GITHUB_REF_NAME" Adderall-x86_64.AppImage --clobber

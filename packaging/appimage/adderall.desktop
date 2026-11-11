@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Adderall
+Comment=A grid-based habit tracker
+Exec=adderall
+Icon=adderall
+Categories=Utility;
+Terminal=false

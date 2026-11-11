@@ -25,6 +25,7 @@ Adderall is a graphical habit tracker written in C. It shows your habits as line
 - [Platforms](#platforms)
 - [How it works](#how-it-works)
 - [Saving your data](#saving-your-data)
+- [Download (Linux AppImage)](#download-linux-appimage)
 - [Building from source](#building-from-source)
 - [Usage](#usage)
 - [Configuration](#configuration)
@@ -322,6 +323,17 @@ Adderall saves as you go, so a crash or power cut can't leave you with half a fi
 (In that order the backup is made just before the swap, so at every moment there is a complete file to open.)
 
 If your main file is ever damaged, Adderall tells you and falls back to the backup instead of starting empty.
+
+## Download (Linux AppImage)
+
+Grab `Adderall-x86_64.AppImage` from the [releases page](https://github.com/Doggydoggywhatnow/Adderall/releases/latest), then:
+
+```bash
+chmod +x Adderall-x86_64.AppImage
+./Adderall-x86_64.AppImage
+```
+
+It is built by [`.github/workflows/appimage.yml`](.github/workflows/appimage.yml) whenever a `v*` tag is pushed; you can also run that workflow by hand and download the AppImage from the run's artifacts.
 
 ## Building from source
 
