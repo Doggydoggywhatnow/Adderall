@@ -52,7 +52,7 @@ Adderall is a joke about how people think taking Adderall will change their life
 
 1. **Private.** Your habits are your business. They never leave your device. Period.
 2. **Simple.** A line of days per habit. That's the whole idea.
-3. **Yours.** You choose how your habits are laid out and displayed, and your data is a plain text file you can open anywhere.
+3. **Yours.** You choose how your habits are laid out and displayed, and your data is a Markdown file you can open anywhere.
 4. **Lightweight.** Native C, no heavyweight runtime, no bloat.
 
 ## Features
@@ -68,7 +68,7 @@ Adderall is a joke about how people think taking Adderall will change their life
 - **Time zones your way:** pick yours from a small world map and choose when a new day begins
 - **Editable hotkeys,** and a font and text size of your choosing
 - **Scroll or use the arrow keys** to move through your days
-- **Everything in one plain text file,** saved crash-safe
+- **Everything in one Markdown file,** saved crash-safe
 - Minimalist, black-and-white interface
 - Progress summaries *(planned)*
 - Runs on Windows, macOS, and Linux, on Wayland or X11
@@ -196,17 +196,17 @@ Adderall ships as a **separate, dedicated build for each operating system**, rat
 
 ## How it works
 
-Adderall is a small graphical layer over one plain text file:
+Adderall is a small graphical layer over one Markdown file:
 
 - **Interface** is built with [SDL3](https://libsdl.org), the same as [THC](https://github.com/Doggydoggywhatnow/THC), and runs the same way on Windows, macOS, and Linux (Wayland and X11).
 - **Text** is drawn with a bundled, openly licensed font by default, and you can switch to any font file you like.
 - **Days** are calendar dates. Today comes from your computer's clock, your chosen time zone, and your new-day time.
-- **Habit data** (habits, marked days, and settings) is stored in a single `.txt` file in your OS's standard data directory.
+- **Habit data** (habits, marked days, and settings) is stored in a single `.md` file in your OS's standard data directory.
 - **No network:** Adderall never talks to the internet. Nothing is sent anywhere.
 
 ## Saving your data
 
-Everything lives in **one plain text file**, so you can read it, copy it, and back it up.
+Everything lives in **one Markdown file**, `adderall.md`, so you can read it, copy it, and back it up. Open it in any text editor or Markdown viewer.
 
 ### Where it lives
 
@@ -222,39 +222,48 @@ In settings you can **copy the path** or **open the folder** in one click.
 
 ### The file format
 
-Simple, line-based, and readable in any text editor. It starts with a version line. An example, which may change before 1.0:
+Plain Markdown: headings, lists, and checkboxes, so it reads well in any editor and renders nicely in a Markdown viewer. It starts with a version line. An example, which may change before 1.0:
 
+```markdown
+# Adderall
+
+adderall-format: 1
+
+## Settings
+
+- timezone: America/New_York
+- daystart: 04:00
+- layout: horizontal
+- font: default
+- textsize: 16
+- hotkey today: t
+
+## Habit: Drink water
+
+- symbol: star
+- start: 2026-11-11
+
+- [x] 2026-11-11
+- [x] 2026-11-12
+- [/] 2026-11-13
+
+## Habit: Read
+
+- symbol: triangle
+- start: 2026-11-12
+- archived: yes
+
+- [x] 2026-11-12
 ```
-adderall 1
-timezone America/New_York
-daystart 04:00
-layout horizontal
-font default
-textsize 16
-key today t
 
-habit Drink water
-symbol star
-start 2026-11-11
-x 2026-11-11
-x 2026-11-12
-s 2026-11-13
-
-habit Read
-symbol triangle
-start 2026-11-12
-archived
-x 2026-11-12
-```
-
-- The lines before the first `habit` are settings: your time zone, day start, layout, font and text size, and any hotkeys you've remapped.
-- `habit` starts a new habit. Habits appear on the board in the order they're listed.
+- `## Settings` holds your time zone, day start, layout, font and text size, and any hotkeys you've remapped.
+- `## Habit: <name>` starts a new habit. Habits appear on the board in the order they're listed.
 - `symbol` is the habit's unique symbol, such as `star`, `triangle`, or `hexagon`.
 - `start` is the habit's first day, and dates are written `YYYY-MM-DD`.
-- `x` is a filled day and `s` is a skipped day. Days that aren't listed are empty.
-- `archived` marks a habit that's off the board.
+- `- [x]` is a filled day and `- [/]` is a skipped day. Days that aren't listed are empty.
+- `archived: yes` marks a habit that's off the board.
 
-If Adderall can't make sense of a line, it tells you which one and leaves the file alone. It never silently throws your data away. It rewrites the file in its own format when it saves, so don't keep notes in it.
+If Adderall can't make sense of a line, it tells you which one and leaves the file alone. It never silently throws your data away. It rewrites the file in its own format when it saves, so notes, extra headings, and other text you add to it won't be kept.
 
 ### One window at a time
 
@@ -359,7 +368,7 @@ Full option documentation will be added as settings are finalized.
 Privacy is a core value, not a feature toggle.
 
 - All data stays on your device.
-- Your habits, marked days, and settings are stored in a single plain `.txt` file.
+- Your habits, marked days, and settings are stored in a single Markdown file (`adderall.md`).
 - Adderall makes no network requests: no update checks, no crash reports, no telemetry, no accounts.
 - Adderall only reads and writes its own data folder. It doesn't scan or look at anything else on your device.
 - You can open, back up, or delete that file at any time.
@@ -377,7 +386,7 @@ What you do with your habits is your business. Period.
 - [ ] Click to fill, right-click to skip, past days sealed
 - [ ] Habit button: create, rename, archive, restore, and delete habits
 - [ ] A unique symbol for each habit, with hover tooltips
-- [ ] Single `.txt` data file, crash-safe, with a backup
+- [ ] Single Markdown data file, crash-safe, with a backup
 - [ ] Time zone map and custom new-day time, with a bundled time zone database
 - [ ] Freeform measure tool
 - [ ] Black-and-white interface, light and dark
@@ -414,7 +423,7 @@ Because a number that resets to zero after one bad day does more harm than good.
 
 ### Why no reminders, accounts, or syncing?
 
-Adderall is deliberately small and private: no notifications, no accounts, no cloud, no social features. The data is one plain file, so you can copy it between computers yourself or keep it in a folder you already sync.
+Adderall is deliberately small and private: no notifications, no accounts, no cloud, no social features. The data is one Markdown file, so you can copy it between computers yourself or keep it in a folder you already sync.
 
 ### Does Adderall need an internet connection?
 
