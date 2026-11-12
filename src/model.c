@@ -220,7 +220,7 @@ ad_result ad_model_set_day(ad_model *m, int habit, ad_day day, ad_state s) {
   ad_habit *h = &m->habits[habit];
   if (h->archived) return AD_ERR_ARCHIVED;
   if (day < h->start) return AD_ERR_BEFORE_START;
-  if (ad_model_is_sealed(m, day)) return AD_ERR_SEALED;
+  if (ad_model_is_sealed(m, day) && !h->setup) return AD_ERR_SEALED;
   if (day > m->today + AD_HORIZON_DAYS) return AD_ERR_RANGE;
   if (ad_habit_get(h, day) == s) return AD_OK;
   return ad_habit_put(h, day, s) ? AD_OK : AD_ERR_RANGE;
@@ -266,6 +266,7 @@ const char *ad_habit_result_message(ad_habit_result r, ad_name_result nr) {
     case AD_HABIT_NOT_FOUND: return "There is no such habit.";
     case AD_HABIT_SYMBOL_TAKEN: return "Another habit on the board already uses that symbol.";
     case AD_HABIT_ALREADY: return "That habit is already like that.";
+    case AD_HABIT_BAD_DATE: return "A habit can't start in the future, or more than 10 years back.";
   }
   return "";
 }
@@ -303,18 +304,34 @@ static bool name_taken(const ad_model *m, const char *name, int except) {
   return false;
 }
 
-ad_habit_result ad_model_create(ad_model *m, const char *name, int *index_out, ad_name_result *nr) {
+ad_habit_result ad_model_create_from(ad_model *m, const char *name, ad_day start, int *index_out, ad_name_result *nr) {
   char clean[AD_NAME_MAX_BYTES + 1];
   const ad_name_result r = ad_name_normalize(name, clean);
   if (nr) *nr = r;
   if (r != AD_NAME_OK) return AD_HABIT_BAD_NAME;
+  if (start > m->today || start < m->today - AD_BACKFILL_MAX_DAYS) return AD_HABIT_BAD_DATE;
   if (name_taken(m, clean, -1)) return AD_HABIT_NAME_TAKEN;
   if (ad_model_board_count(m) >= AD_MAX_BOARD) return AD_HABIT_BOARD_FULL;
   if (m->n_habits >= AD_MAX_HABITS) return AD_HABIT_TOO_MANY;
-  const int i = ad_model_add_raw(m, clean, ad_model_next_symbol(m), m->today);
+  const int i = ad_model_add_raw(m, clean, ad_model_next_symbol(m), start);
   if (i < 0) return AD_HABIT_TOO_MANY;
+  m->habits[i].setup = start < m->today;
   if (index_out) *index_out = i;
   return AD_HABIT_OK;
+}
+
+ad_habit_result ad_model_create(ad_model *m, const char *name, int *index_out, ad_name_result *nr) {
+  return ad_model_create_from(m, name, m->today, index_out, nr);
+}
+
+void ad_model_finish_setup(ad_model *m) {
+  for (int i = 0; i < m->n_habits; i++) m->habits[i].setup = false;
+}
+
+bool ad_model_in_setup(const ad_model *m) {
+  for (int i = 0; i < m->n_habits; i++)
+    if (m->habits[i].setup) return true;
+  return false;
 }
 
 ad_habit_result ad_model_rename(ad_model *m, int habit, const char *name, ad_name_result *nr) {

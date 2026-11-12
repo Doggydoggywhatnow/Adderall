@@ -45,12 +45,12 @@ jobs:
         run: |
           curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool
-          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir Adderall-0.1.0-x86_64.AppImage
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir Adderall-0.2.0-x86_64.AppImage
 
       - uses: actions/upload-artifact@v4
         with:
           name: appimage
-          path: Adderall-0.1.0-x86_64.AppImage
+          path: Adderall-0.2.0-x86_64.AppImage
 
   publish:
     # Commits the AppImage to downloads/ on dev so the README can link to it
@@ -72,6 +72,7 @@ jobs:
       - name: Commit the AppImage
         run: |
           mkdir -p downloads
+          rm -f downloads/Adderall-*.AppImage
           cp dist/Adderall-*.AppImage downloads/
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"

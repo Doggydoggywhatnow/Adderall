@@ -142,10 +142,55 @@ static void test_persists(void) {
   ad_model_free(&m);
 }
 
+static void test_backfill(void) {
+  ad_model m = new_model();
+  int i = -1;
+  /* A habit that has really been going for 30 days. */
+  CHECK_EQ_INT(ad_model_create_from(&m, "Run", D - 30, &i, NULL), AD_HABIT_OK);
+  CHECK_EQ_INT(m.habits[i].start, D - 30);
+  CHECK(ad_model_in_setup(&m));
+  /* During setup the past can be filled and skipped, one day at a time. */
+  CHECK_EQ_INT(ad_model_set_day(&m, i, D - 30, AD_FILLED), AD_OK);
+  CHECK_EQ_INT(ad_model_toggle_fill(&m, i, D - 29), AD_OK);
+  CHECK_EQ_INT(ad_model_toggle_skip(&m, i, D - 5), AD_OK);
+  CHECK_EQ_INT(ad_model_set_day(&m, i, D - 31, AD_FILLED), AD_ERR_BEFORE_START);
+  /* Another habit is not opened up by that. */
+  int j = create(&m, "Read");
+  CHECK_EQ_INT(ad_model_set_day(&m, j, D - 1, AD_FILLED), AD_ERR_BEFORE_START);
+  /* It survives a save and reload as ordinary, sealed history. */
+  size_t len;
+  char *t = ad_format_write(&m, &len);
+  ad_model back;
+  ad_parse_error e;
+  CHECK_EQ_INT(ad_format_parse(t, len, &back, &e), AD_PARSE_OK);
+  ad_model_set_clock(&back, D);
+  CHECK(!ad_model_in_setup(&back));
+  CHECK_EQ_INT(back.habits[0].start, D - 30);
+  CHECK_EQ_INT(ad_habit_get(&back.habits[0], D - 29), AD_FILLED);
+  CHECK_EQ_INT(ad_model_set_day(&back, 0, D - 29, AD_EMPTY), AD_ERR_SEALED);
+  free(t);
+  ad_model_free(&back);
+  /* Confirming setup seals the past. */
+  ad_model_finish_setup(&m);
+  CHECK(!ad_model_in_setup(&m));
+  CHECK_EQ_INT(ad_model_set_day(&m, i, D - 10, AD_FILLED), AD_ERR_SEALED);
+  CHECK_EQ_INT(ad_habit_get(&m.habits[i], D - 29), AD_FILLED);
+  CHECK_EQ_INT(ad_model_set_day(&m, i, D, AD_FILLED), AD_OK); /* today stays open */
+  /* Dates that make no sense are refused. */
+  CHECK_EQ_INT(ad_model_create_from(&m, "Future", D + 1, NULL, NULL), AD_HABIT_BAD_DATE);
+  CHECK_EQ_INT(ad_model_create_from(&m, "Ancient", D - AD_BACKFILL_MAX_DAYS - 1, NULL, NULL), AD_HABIT_BAD_DATE);
+  CHECK_EQ_INT(ad_model_create_from(&m, "Decade", D - AD_BACKFILL_MAX_DAYS, NULL, NULL), AD_HABIT_OK);
+  CHECK_EQ_INT(ad_model_create_from(&m, "run", D - 3, NULL, NULL), AD_HABIT_NAME_TAKEN);
+  /* A habit started today is never in setup. */
+  CHECK(!m.habits[j].setup);
+  ad_model_free(&m);
+}
+
 int main(void) {
   test_create_rules();
   test_board_limit_and_archive();
   test_rename_symbol_delete();
   test_persists();
+  test_backfill();
   TEST_DONE();
 }

@@ -4,7 +4,7 @@
 
 Adderall is a graphical habit tracker written in C. It shows your habits as lines of cells, one cell per day, and makes keeping up with them feel as simple as filling in a square. No accounts, no uploads, no subscriptions: just your habits, on your device. It will also absolutely, definitely change your life.
 
-> **Status:** version 0.1.0, a demo of everything described below. Sections marked *(planned)* describe where Adderall is headed rather than what ships today.
+> **Status:** version 0.2.0, a demo of everything described below. Sections marked *(planned)* describe where Adderall is headed rather than what ships today.
 
 ---
 
@@ -82,7 +82,7 @@ Adderall is a joke about how people think taking Adderall will change their life
 
 On first startup, Adderall lets you:
 
-- **create your first habit**, or skip and start with an empty board
+- **create your first habit**, or skip and start with an empty board. If you've already been at it for a while, say when it started and fill in the past (see [Starting a habit in the past](#starting-a-habit-in-the-past))
 - **choose a layout** for your whole board: horizontal or vertical
 
 The habit's line starts on today, the day you begin tracking it. You can add more habits any time, and each new one stacks under the previous and starts on the day you create it. Your time zone and new-day time default to your computer's settings until you change them.
@@ -119,7 +119,7 @@ With the keyboard, the arrow keys move a focused cell (the first press shows whe
 
 In the bottom-left corner of the window there's a **habit button**. Click it and a small area pops up for managing your habits:
 
-- **Create** a new habit. Its line starts on today, even if you create it halfway through the day.
+- **Create** a new habit. Its line starts on today, even if you create it halfway through the day, unless you say it started earlier.
 - **Rename** a habit.
 - **Change its symbol** to any symbol no other habit on the board is using. Each new habit gets the next free one automatically.
 - **Archive**, **restore**, or **delete** a habit.
@@ -133,6 +133,10 @@ The board holds up to 8 habits, so you'll sometimes need to make room:
 - **Delete** removes a habit and its history for good. Adderall asks you to confirm first, since there's no undo (the backup copy of your data file is the only way back).
 
 If you try to add a ninth habit, Adderall asks you to archive or delete one first. Both only change your data file. They never touch anything else on your device.
+
+### Starting a habit in the past
+
+A habit normally starts today. If you were already doing it, give it an earlier start day, up to ten years back, when you create it (in the first-launch screen or the habit pop-up; *Started: today* has buttons to step back by a day, a week or a month). Adderall then shows the habit from that day and a bar at the bottom: click the days you did it, right-click the ones you skipped, one cell at a time as always. Press **Done** and those past days are sealed like any other. Until then, only that habit's past can be edited; the rest of the board is untouched. If you quit before pressing Done, what you entered is kept and sealed.
 
 ## Marking days
 
@@ -326,11 +330,11 @@ If your main file is ever damaged, Adderall tells you and falls back to the back
 
 ## Download (Linux AppImage)
 
-The Linux AppImage for **v0.1.0** (x86-64) is rebuilt by CI on every push to `dev` and stored in the [`downloads/`](https://github.com/Doggydoggywhatnow/Adderall/tree/dev/downloads) folder:
+The Linux AppImage for **v0.2.0** (x86-64) is rebuilt by CI on every push to `dev` and stored in the [`downloads/`](https://github.com/Doggydoggywhatnow/Adderall/tree/dev/downloads) folder:
 
 | Distribution | Download | Run |
 | --- | --- | --- |
-| Any (AppImage) | [Adderall-0.1.0-x86_64.AppImage](https://github.com/Doggydoggywhatnow/Adderall/raw/dev/downloads/Adderall-0.1.0-x86_64.AppImage) | `chmod +x Adderall-*.AppImage && ./Adderall-*.AppImage` |
+| Any (AppImage) | [Adderall-0.2.0-x86_64.AppImage](https://github.com/Doggydoggywhatnow/Adderall/raw/dev/downloads/Adderall-0.2.0-x86_64.AppImage) | `chmod +x Adderall-*.AppImage && ./Adderall-*.AppImage` |
 
 It is built by `.github/workflows/appimage.yml`; the recipe lives in `packaging/appimage/`. Windows and macOS packages are planned.
 
@@ -511,7 +515,7 @@ Adderall uses `x.y.z` version numbers:
 - **`0.x.0` (minor):** big new features
 - **`0.0.x` (patch):** small new features, bug fixes, and security updates
 
-The first release, `0.1.0`, is a demo that shows off everything in this README.
+The first release, `0.1.0`, was a demo that shows off everything in this README. `0.2.0` adds filling in the past when you set a habit up.
 
 ## License
 

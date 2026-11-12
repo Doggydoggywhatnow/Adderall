@@ -29,6 +29,7 @@ typedef struct {
   ad_symbol symbol;
   ad_day start;      /* the habit's first day */
   bool archived;
+  bool setup;        /* being set up with past days: those can be entered until setup is finished (never saved) */
   ad_mark *marks;    /* sorted by day */
   size_t n_marks, cap_marks;
 } ad_habit;
@@ -135,6 +136,7 @@ typedef enum {
   AD_HABIT_NOT_FOUND,
   AD_HABIT_SYMBOL_TAKEN,
   AD_HABIT_ALREADY,    /* already archived / already on the board */
+  AD_HABIT_BAD_DATE,   /* a start day in the future, or too far back */
 } ad_habit_result;
 
 const char *ad_habit_result_message(ad_habit_result r, ad_name_result nr);
@@ -148,6 +150,14 @@ ad_symbol ad_model_next_symbol(const ad_model *m);
 /* Create a habit: it starts today, even halfway through the day, and gets the
  * next free symbol. `*nr` (optional) tells why a name was refused. */
 ad_habit_result ad_model_create(ad_model *m, const char *name, int *index_out, ad_name_result *nr);
+/* Like ad_model_create, but the habit starts on an earlier day (today or up
+ * to AD_BACKFILL_MAX_DAYS before). The habit is then in setup: its past days
+ * can be filled or skipped until ad_model_finish_setup, which seals them. */
+#define AD_BACKFILL_MAX_DAYS 3650
+ad_habit_result ad_model_create_from(ad_model *m, const char *name, ad_day start, int *index_out, ad_name_result *nr);
+/* End setup for every habit: from now on past days are sealed. */
+void ad_model_finish_setup(ad_model *m);
+bool ad_model_in_setup(const ad_model *m);
 ad_habit_result ad_model_rename(ad_model *m, int habit, const char *name, ad_name_result *nr);
 /* Symbols are unique among the habits on the board. */
 ad_habit_result ad_model_set_symbol(ad_model *m, int habit, ad_symbol sym);

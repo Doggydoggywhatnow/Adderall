@@ -24,7 +24,9 @@ enum {
   ID_POP_CLOSE, ID_POP_NAME, ID_POP_ADD, ID_POP_CANCEL,
   ID_FIRST_NAME, ID_FIRST_HORIZ, ID_FIRST_VERT, ID_FIRST_START, ID_FIRST_SKIP,
   ID_SET_CLOSE, ID_MAP_USE, ID_MAP_CANCEL, ID_MAP_PREV, ID_MAP_NEXT, ID_MAP_AREA,
+  ID_SETUP_DONE,
   ID_SET_BASE = 3000, /* + row * 16 + k */
+  ID_BACK_BASE = 5000, /* + which * 8 + k */
   ID_HABIT_ROWS = 1000 /* + habit * 16 + k */
 };
 
@@ -104,6 +106,9 @@ typedef struct {
   bool anim_on;
   float anim_from, anim_to;
   Uint64 anim_t0;
+
+  /* starting a habit in the past */
+  int new_back, pending_back, first_back; /* days before today */
 
   /* first launch */
   char first_name[AD_NAME_MAX_BYTES + 8];
@@ -524,7 +529,7 @@ static void board_frame(App *a) {
   }
 
   /* With the keyboard there is no hover, so say what the focused cell is. */
-  if (a->cell_focus && a->kb_visible && u->focus == 0 && !a->modal) {
+  if (a->cell_focus && a->kb_visible && u->focus == 0 && !a->modal && !ad_model_in_setup(m)) {
     static const char *const STATE[3] = {"empty", "filled", "skipped"};
     char date[64], line[200];
     format_long_date(a->focus_day, date, sizeof date);
@@ -614,6 +619,77 @@ static void banners_frame(App *a) {
     if (ui_button(u, ID_ERR_RETRY, b, "Retry", UI_BTN_NORMAL)) commit(a);
   } else if (ui_button(u, ID_NOTICE_OK, b, "OK", UI_BTN_NORMAL)) {
     a->notice[0] = 0;
+  }
+}
+
+/* "Started earlier?": pick a start day up to ten years back. Returns the height used. */
+static float back_row(App *a, float x, float y, float w, int *days, int which) {
+  ui_state *u = &a->ui;
+  gfx *g = &a->g;
+  const float s = g->scale, lh = gfx_text_height(g);
+  char buf[96];
+  if (*days == 0) {
+    SDL_snprintf(buf, sizeof buf, "Started: today");
+  } else {
+    char d[64];
+    format_long_date(a->model.today - *days, d, sizeof d);
+    SDL_snprintf(buf, sizeof buf, "Started: %s (%d day%s ago)", d, *days, *days == 1 ? "" : "s");
+  }
+  gfx_text_fit(g, buf, x, y, w, *days ? g->theme.fg : g->theme.dim);
+  static const char *const L[6] = {"-1 day", "-1 week", "-1 month", "+1 day", "+1 week", "+1 month"};
+  static const int D[6] = {1, 7, 30, -1, -7, -30};
+  const float bh = roundf(34 * s);
+  float bx = x;
+  const float by = y + lh + 6 * s;
+  for (int i = 0; i < 6; i++) {
+    const float bw = ui_button_width(u, L[i]) * 0.8f;
+    ad_rect r = {bx, by, bw, bh};
+    const int next = *days + D[i];
+    const int flags = (next < 0 || next > AD_BACKFILL_MAX_DAYS) ? UI_BTN_DISABLED : 0;
+    if (ui_button(u, ID_BACK_BASE + which * 8 + i, r, L[i], flags)) *days = next;
+    bx += bw + 6 * s;
+  }
+  return lh + 6 * s + bh;
+}
+
+/* Begin setting up a habit with past days: show its first day and its row. */
+static void begin_setup(App *a, int habit) {
+  int bh[AD_MAX_BOARD];
+  const int nb = board_habits(a, bh);
+  for (int r = 0; r < nb; r++) {
+    if (bh[r] != habit) continue;
+    layout_view(a);
+    ad_view_center_on(&a->view, a->model.habits[habit].start);
+    a->cell_focus = true;
+    a->focus_row = r;
+    a->focus_day = a->model.habits[habit].start;
+    a->kb_visible = false;
+  }
+}
+
+static void setup_bar_frame(App *a) {
+  ui_state *u = &a->ui;
+  gfx *g = &a->g;
+  int W, H;
+  SDL_GetWindowSizeInPixels(a->win, &W, &H);
+  const float s = g->scale;
+  const char *name = "";
+  for (int i = 0; i < a->model.n_habits; i++)
+    if (a->model.habits[i].setup) name = a->model.habits[i].name;
+  char text[200];
+  SDL_snprintf(text, sizeof text, "Filling in the past for \"%s\": click the days you did it, right-click the ones you skipped. Today and later work as always. Press Done and the past is sealed.", name);
+  const float bw = ui_button_width(u, "Done");
+  const float avail = W - 2 * (170 * s) - bw - 24 * s;
+  const float tw = fmaxf(avail, 160 * s);
+  const float th = ui_wrapped_text(u, text, 0, 0, tw, g->theme.fg, false);
+  const float ph = fmaxf(th, 36 * s) + 16 * s;
+  ad_rect r = {(W - (tw + bw + 40 * s)) * 0.5f, H - ph - 8 * s, tw + bw + 40 * s, ph};
+  ui_panel(u, r);
+  ui_wrapped_text(u, text, r.x + 12 * s, r.y + 8 * s, tw, g->theme.fg, true);
+  ad_rect b = {r.x + r.w - 12 * s - bw, r.y + (ph - 36 * s) * 0.5f, bw, 36 * s};
+  if (ui_button(u, ID_SETUP_DONE, b, "Done", UI_BTN_PRIMARY)) {
+    ad_model_finish_setup(&a->model);
+    commit(a);
   }
 }
 
@@ -801,23 +877,38 @@ static void apply_action(App *a, const Action *act) {
       const bool ok = act->kind == ACT_PROMPT_ARCHIVE ? ad_model_archive(&a->model, act->habit) == AD_HABIT_OK : ad_model_delete(&a->model, act->habit) == AD_HABIT_OK;
       a->edit = EDIT_NONE;
       if (ok) {
-        r = ad_model_create(&a->model, a->pending_name, NULL, &nr);
-        if (r == AD_HABIT_OK) a->new_name[0] = 0;
-        else SDL_snprintf(a->popup_msg, sizeof a->popup_msg, "%s", ad_habit_result_message(r, nr));
+        int idx = -1;
+        r = ad_model_create_from(&a->model, a->pending_name, a->model.today - a->pending_back, &idx, &nr);
+        if (r == AD_HABIT_OK) {
+          a->new_name[0] = 0;
+          a->new_back = 0;
+        } else SDL_snprintf(a->popup_msg, sizeof a->popup_msg, "%s", ad_habit_result_message(r, nr));
         commit(a);
+        if (r == AD_HABIT_OK && a->model.habits[idx].setup) {
+          popup_close(a);
+          begin_setup(a, idx);
+        }
       }
       a->full_prompt = false;
       break;
     }
-    case ACT_ADD:
-      r = ad_model_create(&a->model, a->new_name, NULL, &nr);
+    case ACT_ADD: {
+      int idx = -1;
+      if (ad_model_in_setup(&a->model)) ad_model_finish_setup(&a->model); /* one at a time */
+      r = ad_model_create_from(&a->model, a->new_name, a->model.today - a->new_back, &idx, &nr);
       if (r == AD_HABIT_OK) {
         a->new_name[0] = 0;
         a->popup_msg[0] = 0;
         commit(a);
+        if (a->model.habits[idx].setup) {
+          a->new_back = 0;
+          popup_close(a);
+          begin_setup(a, idx);
+        }
       } else if (r == AD_HABIT_BOARD_FULL) {
         /* the ninth habit: ask which one to make room by */
         SDL_strlcpy(a->pending_name, a->new_name, sizeof a->pending_name);
+        a->pending_back = a->new_back;
         a->full_prompt = true;
         a->edit = EDIT_NONE;
         a->popup_msg[0] = 0;
@@ -825,6 +916,7 @@ static void apply_action(App *a, const Action *act) {
         SDL_snprintf(a->popup_msg, sizeof a->popup_msg, "%s", ad_habit_result_message(r, nr));
       }
       break;
+    }
   }
 }
 
@@ -906,7 +998,7 @@ static void habit_popup_frame(App *a) {
     y += 10 * s;
 
     /* create */
-    gfx_text(g, "New habit. It starts today.", x, y, g->theme.dim);
+    gfx_text(g, "New habit. It starts today, unless you say it started earlier.", x, y, g->theme.dim);
     y += lh + 6 * s;
     const float fh = roundf(pop_row_h(a) * 0.8f), addw = ui_button_width(u, "Add");
     ad_rect fr = {x, y, w - addw - 8 * s, fh};
@@ -922,7 +1014,8 @@ static void habit_popup_frame(App *a) {
         return;
       }
     }
-    y += fh + 6 * s;
+    y += fh + 8 * s;
+    y += back_row(a, x, y, w, &a->new_back, 0) + 6 * s;
     if (a->popup_msg[0]) y += ui_wrapped_text(u, a->popup_msg, x, y, w, g->theme.fg, true) + 4 * s;
 
     /* archived */
@@ -1592,7 +1685,7 @@ static void first_frame(App *a) {
   const float s = g->scale, pad = 24 * s, lh = gfx_text_height(g);
   const float pw = fminf(W - 40 * s, 620 * s);
   const float fh = 42 * s;
-  const float ph = pad * 2 + lh * 2 + 16 * s + lh * 2 + fh + 22 * s + lh + 8 * s + fh + 6 * s + lh * 1.2f + 24 * s + fh;
+  const float ph = pad * 2 + lh * 2 + 16 * s + lh * 2 + fh + 22 * s + lh + 8 * s + fh + 6 * s + lh * 1.2f + 14 * s + (lh + 6 * s) * 2 + 34 * s + 18 * s + fh + 20 * s;
   ad_rect panel = {(W - pw) * 0.5f, fmaxf(16 * s, (H - ph) * 0.5f), pw, ph};
   ui_panel(u, panel);
   const float x = panel.x + pad, w = pw - 2 * pad;
@@ -1615,7 +1708,10 @@ static void first_frame(App *a) {
   ad_rect l1 = {x, y, lw, fh}, l2 = {x + lw + 10 * s, y, lw, fh};
   if (ui_button(u, ID_FIRST_HORIZ, l1, "Horizontal: a line to the right", a->first_layout == AD_LAYOUT_HORIZONTAL ? UI_BTN_SELECTED : 0)) a->first_layout = AD_LAYOUT_HORIZONTAL;
   if (ui_button(u, ID_FIRST_VERT, l2, "Vertical: wraps downward", a->first_layout == AD_LAYOUT_VERTICAL ? UI_BTN_SELECTED : 0)) a->first_layout = AD_LAYOUT_VERTICAL;
-  y += fh + 24 * s;
+  y += fh + 14 * s;
+  gfx_text(g, "Already been at it? Say when it started and you can fill in the past next:", x, y, g->theme.fg);
+  y += lh + 6 * s;
+  y += back_row(a, x, y, w, &a->first_back, 1) + 18 * s;
 
   const float sw = ui_button_width(u, "Start"), kw = ui_button_width(u, "Skip");
   ad_rect start = {x + w - sw, y, sw, fh}, skip = {x + w - sw - 10 * s - kw, y, kw, fh};
@@ -1628,8 +1724,11 @@ static void first_frame(App *a) {
   }
   if (go || skipped) {
     ad_name_result nr;
+    int first_idx = -1;
     if (go) {
-      const ad_habit_result r = ad_model_create(&a->model, a->first_name, NULL, &nr);
+      int idx = -1;
+      const ad_habit_result r = ad_model_create_from(&a->model, a->first_name, a->model.today - a->first_back, &idx, &nr);
+      if (r == AD_HABIT_OK) first_idx = idx;
       if (r != AD_HABIT_OK) {
         SDL_snprintf(a->popup_msg, sizeof a->popup_msg, "%s", ad_habit_result_message(r, nr));
         return;
@@ -1642,6 +1741,7 @@ static void first_frame(App *a) {
     commit(a);
     layout_view(a);
     ad_view_center_on(&a->view, a->model.today);
+    if (first_idx >= 0 && a->model.habits[first_idx].setup) begin_setup(a, first_idx);
   }
 }
 
@@ -1759,6 +1859,7 @@ static void frame(App *a) {
     corner_buttons_frame(a);
     if (a->popup_open) habit_popup_frame(a);
     if (a->settings_open) settings_frame(a);
+    if (ad_model_in_setup(&a->model) && !a->settings_open) setup_bar_frame(a);
     banners_frame(a);
   }
   ui_end_frame(&a->ui);
